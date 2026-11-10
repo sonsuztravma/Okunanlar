@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Sonsuz Okumalar - Kitap Yönetim & Güncelleme Paneli
-1. ElevenReader / Harici JSON Yükleme
+1. ElevenReader / Harici JSON Önizleme ve Seçerek Ekleme (Hariç tutma / Tümünü seçme)
 2. Storytel CSV Yükleme
 3. Tek Tek Kitap Ekleme (Ad/Yazar veya ISBN)
 4. GitHub'a Gönderme (Canlıya Alma)
@@ -24,7 +24,7 @@ def log(msg):
     islem_durumu["mesaj"] = msg
     print(f"[*] {msg}", flush=True)
 
-def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilgi=None):
+def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kitap_bilgi=None):
     islem_durumu["calisiyor"] = True
     islem_durumu["son_hata"] = None
     try:
@@ -66,39 +66,36 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
                             'son_dinleme': son
                         })
 
-        # 2. ElevenReader JSON İçe Aktarma
-        if eleven_json_yolu:
-            log(f"ElevenReader JSON okunuyor: {os.path.basename(eleven_json_yolu)}")
-            with open(eleven_json_yolu, 'r', encoding='utf8') as f:
-                eleven_data = json.load(f)
-                kitap_dizisi = eleven_data if isinstance(eleven_data, list) else eleven_data.get('books', [])
-                for b in kitap_dizisi:
-                    baslik = (b.get('title') or b.get('baslik') or '').strip()
-                    if not baslik: continue
-                    yazar = (b.get('author') or b.get('yazar') or '').strip()
-                    isbn = (b.get('isbn') or '').strip()
-                    if not isbn:
-                        h = hashlib.md5(f"eleven:{baslik}:{yazar}".encode('utf8')).hexdigest()[:10]
-                        isbn = f"ELV{h}"
+        # 2. ElevenReader Seçili Kitaplar İçe Aktarma
+        if eleven_secili_kitaplar:
+            log(f"{len(eleven_secili_kitaplar)} adet seçilen ElevenReader kitabı işleniyor...")
+            for b in eleven_secili_kitaplar:
+                baslik = (b.get('title') or b.get('baslik') or '').strip()
+                if not baslik: continue
+                yazar = (b.get('author') or b.get('yazar') or '').strip()
+                isbn = (b.get('isbn') or '').strip()
+                if not isbn:
+                    h = hashlib.md5(f"eleven:{baslik}:{yazar}".encode('utf8')).hexdigest()[:10]
+                    isbn = f"ELV{h}"
 
-                    sure_sn = int(b.get('duration_seconds') or b.get('sure_sn') or 0)
-                    bugun = time.strftime('%Y-%m-%d')
-                    tarih = b.get('date') or b.get('baslangic') or bugun
+                sure_sn = int(b.get('duration_seconds') or b.get('sure_sn') or 0)
+                bugun = time.strftime('%Y-%m-%d')
+                tarih = b.get('date') or b.get('baslangic') or bugun
 
-                    if isbn in mevcut_havuz:
-                        if sure_sn: mevcut_havuz[isbn]['sure_sn'] = sure_sn
-                    else:
-                        yeni_kitaplar.append({
-                            'isbn': isbn,
-                            'baslik_csv': baslik,
-                            'yazar_belirtilen': yazar,
-                            'sure_sn': sure_sn,
-                            'ilerleme': 100,
-                            'format': 'ElevenReader',
-                            'baslangic': tarih,
-                            'son_dinleme': tarih,
-                            'kapak_url': b.get('cover_url') or b.get('kapak')
-                        })
+                if isbn in mevcut_havuz:
+                    if sure_sn: mevcut_havuz[isbn]['sure_sn'] = sure_sn
+                else:
+                    yeni_kitaplar.append({
+                        'isbn': isbn,
+                        'baslik_csv': baslik,
+                        'yazar_belirtilen': yazar,
+                        'sure_sn': sure_sn,
+                        'ilerleme': 100,
+                        'format': 'ElevenReader',
+                        'baslangic': tarih,
+                        'son_dinleme': tarih,
+                        'kapak_url': b.get('cover_url') or b.get('kapak')
+                    })
 
         # 3. Tek Kitap Ekleme
         if tek_kitap_bilgi:
@@ -110,11 +107,11 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
 
         # Yeni kitapları Storytel / Kitapyurdu üzerinde tara
         if yeni_kitaplar:
-            log(f"{len(yeni_kitaplar)} adet yeni kitap internetten taranıyor...")
+            log(f"{len(yeni_kitaplar)} adet yeni kitap taranıyor...")
             for i, yk in enumerate(yeni_kitaplar, 1):
                 baslik = yk.get('baslik_csv') or yk['isbn']
                 yazar = yk.get('yazar_belirtilen', '')
-                log(f"[{i}/{len(yeni_kitaplar)}] Taranıyor: {baslik}")
+                log(f"[{i}/{len(yeni_kitaplar)}] İnceleniyor: {baslik}")
 
                 st = toplayici.storytel(yk['isbn']) if yk['isbn'].isdigit() else {}
                 if not st and baslik:
@@ -241,20 +238,17 @@ def csv_yukle():
     threading.Thread(target=guncelleme_sureci, kwargs={'csv_dosya_yolu': hedef}).start()
     return jsonify({"mesaj": "CSV yükleme ve güncelleme süreci başlatıldı."})
 
-@app.route('/eleven-yukle', methods=['POST'])
-def eleven_yukle():
+@app.route('/eleven-secilenleri-ekle', methods=['POST'])
+def eleven_secilenleri_ekle():
     if islem_durumu["calisiyor"]:
         return jsonify({"hata": "Şu an başka bir işlem devam ediyor."}), 400
-    if 'dosya' not in request.files:
-        return jsonify({"hata": "Dosya seçilmedi."}), 400
-    dosya = request.files['dosya']
-    if not dosya.filename.endswith('.json'):
-        return jsonify({"hata": "Lütfen geçerli bir .json dosyası yükleyin."}), 400
+    veri = request.json or {}
+    kitaplar = veri.get('kitaplar', [])
+    if not kitaplar:
+        return jsonify({"hata": "Lütfen listeye eklemek için en az bir kitap seçin."}), 400
     
-    hedef = os.path.join(KOK_DIZIN, f"eleven_{int(time.time())}.json")
-    dosya.save(hedef)
-    threading.Thread(target=guncelleme_sureci, kwargs={'eleven_json_yolu': hedef}).start()
-    return jsonify({"mesaj": "ElevenReader kütüphanesi içe aktarılıyor..."})
+    threading.Thread(target=guncelleme_sureci, kwargs={'eleven_secili_kitaplar': kitaplar}).start()
+    return jsonify({"mesaj": f"{len(kitaplar)} adet kitap için aktarma süreci başlatıldı."})
 
 @app.route('/githuba-gonder', methods=['POST'])
 def githuba_gonder():
@@ -288,16 +282,18 @@ HTML_TEMPLATE = """
     --bg: #0c0e16;
     --panel: #151926;
     --panel2: #1e2436;
+    --panel3: #283048;
     --yazi: #f1f3f9;
     --soluk: #8e97b4;
     --vurgu: #f59e0b;
     --vurgu2: #10b981;
     --mor: #8b5cf6;
+    --kirmizi: #ef4444;
     --kenar: rgba(255, 255, 255, 0.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   body { background: var(--bg); color: var(--yazi); padding: 24px 16px; min-height: 100vh; }
-  .kutu { max-width: 820px; margin: 0 auto; }
+  .kutu { max-width: 860px; margin: 0 auto; }
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--kenar); }
   h1 { font-size: 1.4rem; color: var(--vurgu); }
   .sayac-kutu { background: var(--panel2); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
@@ -313,8 +309,26 @@ HTML_TEMPLATE = """
   button:hover { opacity: 0.9; }
   button.yesil { background: var(--vurgu2); }
   button.mor { background: var(--mor); color: #fff; }
+  button.gri { background: var(--panel2); color: var(--yazi); border: 1px solid var(--kenar); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .kod-kutu { background: #08090f; border: 1px solid #232a3e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.78rem; color: #a5b4fc; word-break: break-all; margin-bottom: 14px; user-select: all; }
+  
+  /* Seçim Tablosu ve Listesi Stilleri */
+  .onizleme-kapsul { margin-top: 16px; border: 1px solid var(--kenar); border-radius: 12px; background: rgba(12, 14, 22, 0.6); padding: 14px; display: none; }
+  .onizleme-ust { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+  .arama-filtre { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--kenar); background: var(--bg); color: var(--yazi); font-size: 0.85rem; width: 220px; }
+  .buton-grubu { display: flex; gap: 6px; }
+  .buton-grubu button { width: auto; padding: 6px 12px; margin: 0; font-size: 0.78rem; border-radius: 6px; }
+  .secim-listesi { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; padding-right: 4px; }
+  .secim-satir { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--kenar); transition: border-color 0.15s; }
+  .secim-satir:hover { border-color: rgba(139, 92, 246, 0.4); }
+  .secim-satir input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--mor); cursor: pointer; }
+  .satir-detay { flex: 1; min-width: 0; }
+  .satir-detay strong { display: block; font-size: 0.88rem; color: var(--yazi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .satir-detay small { color: var(--soluk); font-size: 0.76rem; }
+  .satir-haric { background: none; border: none; color: var(--soluk); width: auto; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; border-radius: 6px; margin: 0; }
+  .satir-haric:hover { color: var(--kirmizi); background: rgba(239, 68, 68, 0.1); }
+  
   .durum-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; border: 1px solid var(--vurgu); padding: 12px 24px; border-radius: 999px; font-size: 0.9rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none; z-index: 100; }
   .durum-bar.aktif { display: flex; align-items: center; gap: 10px; }
   .spinner { width: 14px; height: 14px; border: 2px solid var(--vurgu); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -333,20 +347,41 @@ HTML_TEMPLATE = """
     <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
   </header>
 
-  <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme -->
+  <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme ve Seçme -->
   <div class="kart vurgulu-mor">
     <h2 style="color: #c4b5fd;">🎧 ElevenReader / Harici Kitap Ekle (.json)</h2>
-    <p>ElevenReader kütüphanenizdeki kitapları tek tıkla arşive ekleyebilirsiniz. Tarayıcınızda <strong><a href="https://elevenreader.io/reader/library" target="_blank" style="color:#a78bfa">elevenreader.io/reader/library</a></strong> sayfasında <strong>F12 -> Console</strong> sekmesine aşağıdaki kodu yapıştırıp Enter'a basın. İnen <code>elevenreader_kitaplar.json</code> dosyasını buraya yükleyin:</p>
-    <div class="kod-kutu">
+    <p>ElevenReader'dan indirdiğiniz <code>elevenreader_kitaplar.json</code> dosyasını yükleyin. Kitap olmayan belgeleri <strong>kolayca hariç tutabilir</strong> veya <strong>sadece istediklerinizi seçerek</strong> arşive aktarabilirsiniz.</p>
+    
+    <details style="margin-bottom: 14px; font-size: 0.82rem; color: var(--soluk);">
+      <summary style="cursor: pointer; color: #a78bfa; font-weight: 600; margin-bottom: 8px;">Tarayıcı Konsol Kodunu Göster (Henüz indirmediyseniz)</summary>
+      <div class="kod-kutu">
 (async function(){console.log("ElevenReader taranıyor...");let t=null;try{for(let i=0;i<localStorage.length;i++){let k=localStorage.key(i);if(k.startsWith("firebase:authUser")){t=JSON.parse(localStorage.getItem(k)).stsTokenManager.accessToken;break;}}}catch(e){}let list=[];if(t){try{let r=await fetch("https://api.elevenlabs.io/v1/reader/reads?limit=200",{headers:{"authorization":"Bearer "+t}});if(r.ok){let d=await r.json();(d.reads||d||[]).forEach(x=>list.push({title:x.title||x.name||"",author:x.author||"",duration_seconds:x.duration_seconds||0,cover_url:x.cover_image_url||x.image_url||""}));}}catch(err){}}if(!list.length){document.querySelectorAll("a[href*='/reader/'], div[class*='book'], div[class*='card']").forEach(el=>{let tit=el.querySelector("h2,h3,h4,strong,span");let a=el.querySelector("p,small,span:nth-child(2)");let img=el.querySelector("img");if(tit&&tit.innerText.trim().length>1){list.push({title:tit.innerText.trim(),author:a?a.innerText.trim():"",cover_url:img?img.src:""});}});}if(!list.length){alert("Kitap bulunamadı! /reader/library sayfasında olduğunuzdan emin olun.");return;}let b=new Blob([JSON.stringify(list,null,2)],{type:"application/json"});let l=document.createElement("a");l.href=URL.createObjectURL(b);l.download="elevenreader_kitaplar.json";l.click();console.log(list.length+" kitap indirildi!");})();
-    </div>
-    <form id="elevenForm">
-      <div class="form-grup">
-        <label>İndirilen JSON Dosyasını Seçin (<code>elevenreader_kitaplar.json</code>):</label>
-        <input type="file" id="elevenDosya" accept=".json" required>
       </div>
-      <button type="submit" class="mor">ElevenReader / Harici Kitapları Arşive Aktar</button>
-    </form>
+    </details>
+
+    <div class="form-grup">
+      <label>1. Adım: JSON Dosyasını Seçin (Önizleme Açılacaktır):</label>
+      <input type="file" id="elevenDosyaGirdi" accept=".json">
+    </div>
+
+    <!-- Kitap Seçim & Hariç Tutma Listesi -->
+    <div id="onizlemeKapsul" class="onizleme-kapsul">
+      <div class="onizleme-ust">
+        <div>
+          <strong id="secimBilgi" style="color:var(--vurgu)">0 kitap seçildi</strong>
+          <span id="toplamYuklenen" style="font-size:0.8rem;color:var(--soluk);margin-left:6px;">(Toplam 0)</span>
+        </div>
+        <div class="buton-grubu">
+          <input type="text" id="filtreGirdi" class="arama-filtre" placeholder="Listede ara...">
+          <button type="button" class="gri" onclick="hepsiniSec(true)">Tümünü Seç</button>
+          <button type="button" class="gri" onclick="hepsiniSec(false)">Hiçbiri</button>
+        </div>
+      </div>
+
+      <div id="secimListesi" class="secim-listesi"></div>
+
+      <button type="button" id="secilenleriEkleBtn" class="mor" onclick="secilenleriAktar()">Seçilen Kitapları Arşive Aktar</button>
+    </div>
   </div>
 
   <!-- BÖLÜM 2: Storytel CSV Yükleme -->
@@ -411,6 +446,7 @@ HTML_TEMPLATE = """
 
 <script>
 let kontrolTimer = null;
+let yuklenenElevenKitaplar = [];
 
 function durumKontrol() {
   fetch('/durum')
@@ -442,18 +478,115 @@ function surecBaslat() {
   }
 }
 
-document.getElementById('elevenForm').onsubmit = async (e) => {
-  e.preventDefault();
-  const fileInput = document.getElementById('elevenDosya');
-  if (!fileInput.files.length) return;
-  const formData = new FormData();
-  formData.append('dosya', fileInput.files[0]);
-  surecBaslat();
-  const res = await fetch('/eleven-yukle', { method: 'POST', body: formData });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
+// ElevenReader Dosya Seçildiğinde JSON Önizleme ve Seçim Arayüzü
+document.getElementById('elevenDosyaGirdi').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const data = JSON.parse(event.target.result);
+      const list = Array.isArray(data) ? data : (data.books || []);
+      yuklenenElevenKitaplar = list.map((item, idx) => ({
+        id: idx,
+        title: item.title || item.baslik || "İsimsiz Belge",
+        author: item.author || item.yazar || "",
+        duration_seconds: item.duration_seconds || item.sure_sn || 0,
+        cover_url: item.cover_url || item.kapak || "",
+        secili: true,
+        silindi: false
+      }));
+
+      document.getElementById('onizlemeKapsul').style.display = 'block';
+      secimListesiCiz();
+    } catch(err) {
+      alert("JSON dosyası ayrıştırılamadı: " + err);
+    }
+  };
+  reader.readAsText(file);
 };
 
+function secimListesiCiz() {
+  const container = document.getElementById('secimListesi');
+  const filtre = document.getElementById('filtreGirdi').value.toLowerCase();
+  container.innerHTML = '';
+
+  let seciliSayisi = 0;
+  let gorunenSayisi = 0;
+
+  yuklenenElevenKitaplar.forEach(k => {
+    if (k.silindi) return;
+    gorunenSayisi++;
+    if (k.secili) seciliSayisi++;
+
+    const aramaMetin = (k.title + " " + k.author).toLowerCase();
+    if (filtre && !aramaMetin.includes(filtre)) return;
+
+    const sureDk = k.duration_seconds ? Math.round(k.duration_seconds / 60) + " dk" : "";
+
+    const div = document.createElement('div');
+    div.className = 'secim-satir';
+    div.innerHTML = `
+      <input type="checkbox" ${k.secili ? 'checked' : ''} onchange="secimDegistir(${k.id}, this.checked)">
+      <div class="satir-detay">
+        <strong>${k.title}</strong>
+        <small>${k.author || 'Yazar belirtilmemiş'} ${sureDk ? '• ' + sureDk : ''}</small>
+      </div>
+      <button type="button" class="satir-haric" onclick="haricTut(${k.id})" title="Listeden tamamen kaldır">Hariç Tut ✕</button>
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById('secimBilgi').textContent = `${seciliSayisi} kitap seçildi`;
+  document.getElementById('toplamYuklenen').textContent = `(Toplam ${gorunenSayisi})`;
+  document.getElementById('secilenleriEkleBtn').textContent = `${seciliSayisi} Seçilen Kitabı Arşive Aktar`;
+  document.getElementById('secilenleriEkleBtn').disabled = seciliSayisi === 0;
+}
+
+function secimDegistir(id, val) {
+  const k = yuklenenElevenKitaplar.find(x => x.id === id);
+  if (k) k.secili = val;
+  secimListesiCiz();
+}
+
+function haricTut(id) {
+  const k = yuklenenElevenKitaplar.find(x => x.id === id);
+  if (k) {
+    k.silindi = true;
+    k.secili = false;
+  }
+  secimListesiCiz();
+}
+
+function hepsiniSec(durum) {
+  yuklenenElevenKitaplar.forEach(k => {
+    if (!k.silindi) k.secili = durum;
+  });
+  secimListesiCiz();
+}
+
+document.getElementById('filtreGirdi').oninput = secimListesiCiz;
+
+async function secilenleriAktar() {
+  const secilenler = yuklenenElevenKitaplar.filter(k => k.secili && !k.silindi);
+  if (!secilenler.length) {
+    alert("Lütfen eklenecek en az bir kitap seçin.");
+    return;
+  }
+
+  if (!confirm(`${secilenler.length} adet kitap arşive aktarılacak. Onaylıyor musunuz?`)) return;
+
+  surecBaslat();
+  const res = await fetch('/eleven-secilenleri-ekle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kitaplar: secilenler })
+  });
+  const data = await res.json();
+  if (data.hata) alert(data.hata);
+}
+
+// Storytel CSV Formu
 document.getElementById('csvForm').onsubmit = async (e) => {
   e.preventDefault();
   const fileInput = document.getElementById('csvDosya');
@@ -466,6 +599,7 @@ document.getElementById('csvForm').onsubmit = async (e) => {
   if (data.hata) alert(data.hata);
 };
 
+// Tek Kitap Formu
 document.getElementById('tekKitapForm').onsubmit = async (e) => {
   e.preventDefault();
   const body = {
