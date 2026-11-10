@@ -109,13 +109,9 @@ def donustur(k):
     if 0 < sure_sn < 2 * 3600: etk.append('Kısa Dinleme')
     elif sure_sn > 12 * 3600: etk.append('Uzun Dinleme')
 
-    # Akademik etiket kontrolü
-    yayinevi_str = (ky.get('yayinevi') or '').lower()
-    akademik_flag = bool(k.get('akademik'))
-    if not akademik_flag and alt == 'Psikoloji Kitapları':
-        ak_kelimeler = ['psikanaliz', 'psikiyatri', 'klinik', 'nörobiyoloji', 'terapi', 'patoloji', 'fenomenoloji', 'bağlam', 'metis', 'routledge', 'guilford', 'norton']
-        if any(ak_k in norm(baslik + ' ' + ozet + ' ' + yayinevi_str) for ak_k in [norm(x) for x in ak_kelimeler]):
-            akademik_flag = True
+    # Akademik etiket kontrolü: Psikoloji/Travma listelerinden gelen tüm kitaplar Akademik koleksiyondadır
+    psk_flag = bool(k.get('psk_kitap'))
+    akademik_flag = bool(k.get('akademik') or psk_flag)
     if akademik_flag and 'Akademik' not in etk:
         etk.insert(0, 'Akademik')
 
@@ -142,7 +138,8 @@ def donustur(k):
         sayfa=sayfa, sayfa_tahmini=tahmini, sure_sn=sure_sn, ilerleme=k.get('ilerleme', 100),
         baslangic=baslangic, son_dinleme=k.get('son_dinleme') or '', dinleme_yili=din_yili,
         kategori=ana, alt_kategori=alt, etiketler=etk, seri=seri,
-        akademik=akademik_flag, dil=k.get('dil') or 'tr',
+        akademik=akademik_flag, psk_kitap=psk_flag, sesli_kitap=bool(sure_sn > 0 or not psk_flag),
+        dil=k.get('dil') or 'tr',
         puan=kitap.get('grade') or None, puan_sayisi=kitap.get('nrGrade') or 0,
         ozet=ozet, tanitim=tanitim, kapak_sesli=k.get('kapak_sesli'), kapak_basili=k.get('kapak_basili'),
         kaynak_storytel=bool(st), kaynak_kitapyurdu=ky.get('url') or '')

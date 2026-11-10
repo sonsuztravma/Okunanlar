@@ -149,26 +149,8 @@ AKADEMIK_ANAHTARLAR = [
 
 
 def akademik_mi(baslik, yazar, yayinevi, ozet_en, ozet_tr):
-    m_baslik = toplayici.norm(baslik)
-    m_yayin = (yayinevi or '').lower()
-    m_tum = toplayici.norm(f"{baslik} {ozet_en} {ozet_tr}")
-
-    # Eğer açıkça kişisel anı / memoir ise ve akademik yayınevi değilse
-    yayin_akademik = any(y in m_yayin for y in AKADEMIK_YAYINEVLERI)
-    if yayin_akademik:
-        return True
-
-    populer_baslik = any(p in baslik.lower() for p in ['memoir', 'personal stories', 'my trauma', 'letters from a trauma survivor'])
-    if populer_baslik:
-        return False
-
-    # Başlıkta güçlü akademik terim varsa
-    if any(toplayici.norm(k) in m_baslik for k in AKADEMIK_ANAHTARLAR):
-        return True
-
-    # Özette en az 2 farklı akademik anahtar kelime geçiyorsa
-    sayac = sum(1 for k in AKADEMIK_ANAHTARLAR if toplayici.norm(k) in m_tum)
-    return sayac >= 2
+    # Kullanıcının verdiği Psikoloji ve Travma listelerindeki tüm kitaplar akademik/uzmanlık koleksiyonuna dahildir
+    return True
 
 
 gr_semafor = threading.Semaphore(3)
