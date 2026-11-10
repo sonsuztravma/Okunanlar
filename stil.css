@@ -1424,3 +1424,154 @@ mark {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Psikoloji & Akademik Kitaplar Rozet ve İstatistik Sekmesi Stilleri */
+.kat-cip.ozel-psk {
+  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(139, 92, 246, 0.12);
+  color: #ddd6fe;
+}
+.kat-cip.ozel-psk.aktif {
+  background: rgba(139, 92, 246, 0.28);
+  border-color: #a78bfa;
+  color: #fff;
+}
+.kat-cip.ozel-ak {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+  color: #a7f3d0;
+}
+.kat-cip.ozel-ak.aktif {
+  background: rgba(16, 185, 129, 0.28);
+  border-color: #34d399;
+  color: #fff;
+}
+
+.sure-rozet.psk-rozet {
+  background: rgba(15, 23, 42, 0.88);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+.sure-rozet.ak-rozet {
+  background: rgba(6, 78, 59, 0.9);
+  color: #a7f3d0;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+}
+
+.dil-etiket {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  margin-left: 4px;
+}
+
+.alt-baslik-ceviri {
+  font-size: 0.92rem;
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.1);
+  border-left: 3px solid #8b5cf6;
+  padding: 6px 10px;
+  border-radius: 0 8px 8px 0;
+  margin: -4px 0 8px 0;
+}
+
+/* İstatistik Alt Sekmeleri (Genel İstatistikler vs Akademik Kitaplar) */
+.istat-alt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  background: var(--panel);
+  border: 1px solid var(--kenar);
+  padding: 10px 14px;
+  border-radius: var(--yaricap);
+}
+
+.istat-alt-sekmeler {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.istat-sek-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--kenar);
+  background: var(--panel2);
+  color: var(--yazi-ikincil);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.istat-sek-btn:hover {
+  color: var(--yazi);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.istat-sek-btn.aktif {
+  background: var(--vurgu);
+  color: #0c0e16;
+  border-color: var(--vurgu);
+  box-shadow: 0 2px 12px rgba(245, 158, 11, 0.28);
+}
+
+.istat-sek-btn small {
+  background: rgba(0, 0, 0, 0.22);
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.ak-katalog-baslik {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 14px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--kenar);
+  border-radius: var(--yaricap);
+}
+
+.ak-katalog-baslik h3 {
+  font-size: 1.05rem;
+  color: var(--yazi);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ak-katalog-araclar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.ak-katalog-araclar input,
+.ak-katalog-araclar select {
+  background: var(--panel2);
+  color: var(--yazi);
+  border: 1px solid var(--kenar);
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 0.84rem;
+}
+
+.ak-katalog-araclar input {
+  min-width: 230px;
+}

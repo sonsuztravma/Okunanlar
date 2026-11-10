@@ -45,7 +45,7 @@ ALT_ONCELIK = {
  'Roman': [('Fantastik', 'Fantastik'), ('Bilim Kurgu', 'Bilim Kurgu'), ('Gizem & Suç', 'Gizem & Suç'), ('Tarihî', 'Tarihî Roman'), ('Savaş', 'Savaş Romanı'),
            ('Mizah', 'Mizahî Roman'), ('Aşk & İlişkiler', 'Aşk & İlişkiler'), ('Psikolojik', 'Psikolojik Roman'), ('Siyaset & Toplum', 'Toplumsal Roman'),
            ('Aile', 'Aile Romanı'), ('Anadolu & Köy', 'Taşra & Köy Romanı'), ('Göç & Sürgün', 'Göç & Sürgün')],
- 'Kurgu Dışı': [('İngilizce', 'Dil'), ('Yapay Zekâ & Teknoloji', 'Bilim & Teknoloji'), ('Psikolojik', 'Psikoloji'), ('Felsefe & Varoluş', 'Felsefe'), ('Tarihî', 'Tarih'),
+ 'Kurgu Dışı': [('İngilizce', 'Dil'), ('Yapay Zekâ & Teknoloji', 'Bilim & Teknoloji'), ('Psikolojik', 'Psikoloji Kitapları'), ('Felsefe & Varoluş', 'Felsefe'), ('Tarihî', 'Tarih'),
                 ('Siyaset & Toplum', 'Siyaset & Toplum'), ('Yemek', 'Yemek Kültürü'), ('Edebiyat & Yazarlık', 'Edebiyat & Deneme'), ('Sanat & Müzik', 'Sanat')],
  'Biyografi & Anı': [('Edebiyat & Yazarlık', 'Edebiyatçı Yaşamları'), ('Sanat & Müzik', 'Sanat İnsanları'), ('Siyaset & Toplum', 'Siyaset & Devrimciler')],
  'Öykü': [('Mizah', 'Mizahî Öykü'), ('Fantastik', 'Fantastik Öykü'), ('Aşk & İlişkiler', 'Aşk Öyküleri'), ('Aile', 'Aile Öyküleri'), ('Psikolojik', 'Psikolojik Öykü')],
@@ -80,45 +80,71 @@ def yil(t):
 
 
 def donustur(k):
-    st = k['storytel'] or {}; kitap = st.get('book') or {}; ab = st.get('abook') or {}; ky = k['kitapyurdu'] or {}
-    baslik = kitap.get('name') or k['baslik_csv']
+    st = k.get('storytel') or {}; kitap = st.get('book') or {}; ab = st.get('abook') or {}; ky = k.get('kitapyurdu') or {}
+    baslik = kitap.get('name') or k.get('baslik_csv') or ''
     ozet = re.sub(r'\s*\n\s*', '\n', (ab.get('description') or '')).strip()
     tanitim = (ky.get('tanitim') or '').strip()
     ana = ANA.get(((kitap.get('category') or {}).get('title') or '').strip())
     etk = etiketle(baslik, ozet + ' ' + tanitim)
-    if not ana:
-        ana = 'Dil Öğrenimi' if 'İngilizce' in etk else 'Roman'
-    if ana == 'Roman' and 'Gizem & Suç' in etk and etk.index('Gizem & Suç') == 0 and False: ana = 'Polisiye & Gizem'
-    alt = None
-    for e, ad in ALT_ONCELIK.get(ana, []):
-        if e in etk: alt = ad; break
-    if ana == 'Klasikler':
-        alt = 'Dünya Klasikleri' if kitap.get('translatorsAsString') else 'Türk Klasikleri'
-    if ana == 'Roman' and kitap.get('translatorsAsString') and not alt: alt = 'Çeviri Roman'
-    alt = alt or ALT_VARSAYILAN[ana]
-    for ek in (ana, alt, 'Sesli Kitap'):
-        pass
+    if k.get('psk_kitap'):
+        ana = 'Kurgu Dışı'
+        alt = 'Psikoloji Kitapları'
+        if 'Psikolojik' not in etk:
+            etk.append('Psikolojik')
+    else:
+        if not ana:
+            ana = 'Dil Öğrenimi' if 'İngilizce' in etk else 'Roman'
+        alt = None
+        for e, ad in ALT_ONCELIK.get(ana, []):
+            if e in etk: alt = ad; break
+        if ana == 'Klasikler':
+            alt = 'Dünya Klasikleri' if kitap.get('translatorsAsString') else 'Türk Klasikleri'
+        if ana == 'Roman' and kitap.get('translatorsAsString') and not alt: alt = 'Çeviri Roman'
+        alt = alt or ALT_VARSAYILAN[ana]
+
     etk = [e for e in etk if e != 'Biyografi' or ana != 'Biyografi & Anı']
     if (kitap.get('abridged')) or 'kısaltılmış' in baslik.lower(): etk.append('Kısaltılmış Metin')
-    if k['sure_sn'] < 2 * 3600: etk.append('Kısa Dinleme')
-    elif k['sure_sn'] > 12 * 3600: etk.append('Uzun Dinleme')
+
+    sure_sn = k.get('sure_sn') or 0
+    if 0 < sure_sn < 2 * 3600: etk.append('Kısa Dinleme')
+    elif sure_sn > 12 * 3600: etk.append('Uzun Dinleme')
+
+    # Akademik etiket kontrolü
+    yayinevi_str = (ky.get('yayinevi') or '').lower()
+    akademik_flag = bool(k.get('akademik'))
+    if not akademik_flag and alt == 'Psikoloji Kitapları':
+        ak_kelimeler = ['psikanaliz', 'psikiyatri', 'klinik', 'nörobiyoloji', 'terapi', 'patoloji', 'fenomenoloji', 'bağlam', 'metis', 'routledge', 'guilford', 'norton']
+        if any(ak_k in norm(baslik + ' ' + ozet + ' ' + yayinevi_str) for ak_k in [norm(x) for x in ak_kelimeler]):
+            akademik_flag = True
+    if akademik_flag and 'Akademik' not in etk:
+        etk.insert(0, 'Akademik')
+
+    if k.get('dil') == 'en' and 'Yabancı Dil (Çeviri Özet)' not in etk:
+        etk.append('Yabancı Dil (Çeviri Özet)')
+
     seri = None
     if kitap.get('series'):
         s = kitap['series'][0]; seri = s.get('name') or s.get('title') if isinstance(s, dict) else str(s)
     sayfa = ky.get('sayfa'); tahmini = False
-    if not sayfa:
-        sayfa = max(10, round(k['sure_sn'] / 3600 * 32)); tahmini = True
+    if not sayfa and sure_sn > 0:
+        sayfa = max(10, round(sure_sn / 3600 * 32)); tahmini = True
     sesli_t = ab.get('releaseDateFormat')
+    baslangic = k.get('baslangic') or ''
+    din_yili = int(baslangic[:4]) if len(baslangic) >= 4 and baslangic[:4].isdigit() else None
     return dict(
-        isbn=k['isbn'], baslik=baslik, yazar=kitap.get('authorsAsString') or '', anlatici=ab.get('narratorAsString') or '',
+        isbn=k['isbn'], baslik=baslik,
+        orijinal_baslik=k.get('orijinal_baslik') or '',
+        yazar=kitap.get('authorsAsString') or k.get('yazar_belirtilen') or '',
+        anlatici=ab.get('narratorAsString') or '',
         ceviren=kitap.get('translatorsAsString') or '', sesli_yayinci=(ab.get('publisher') or {}).get('name') or '',
         yayinevi=ky.get('yayinevi') or '', basili_isbn=ky.get('basili_isbn') or '',
         yayin_yili=yil(ky.get('yayin_tarihi')) or yil(sesli_t), sesli_tarih=sesli_t,
-        sayfa=sayfa, sayfa_tahmini=tahmini, sure_sn=k['sure_sn'], ilerleme=k['ilerleme'],
-        baslangic=k['baslangic'], son_dinleme=k['son_dinleme'], dinleme_yili=int(k['baslangic'][:4]),
+        sayfa=sayfa, sayfa_tahmini=tahmini, sure_sn=sure_sn, ilerleme=k.get('ilerleme', 100),
+        baslangic=baslangic, son_dinleme=k.get('son_dinleme') or '', dinleme_yili=din_yili,
         kategori=ana, alt_kategori=alt, etiketler=etk, seri=seri,
+        akademik=akademik_flag, dil=k.get('dil') or 'tr',
         puan=kitap.get('grade') or None, puan_sayisi=kitap.get('nrGrade') or 0,
-        ozet=ozet, tanitim=tanitim, kapak_sesli=k['kapak_sesli'], kapak_basili=k['kapak_basili'],
+        ozet=ozet, tanitim=tanitim, kapak_sesli=k.get('kapak_sesli'), kapak_basili=k.get('kapak_basili'),
         kaynak_storytel=bool(st), kaynak_kitapyurdu=ky.get('url') or '')
 
 
@@ -150,13 +176,17 @@ if __name__ == '__main__':
     ham = json.load(open(os.path.join(ONB, 'hepsi.json'), encoding='utf8'))
     liste = [donustur(k) for k in ham]
     veritabani(liste)
+    veri_js_icerik = 'window.KITAPLIK = ' + json.dumps(liste, ensure_ascii=False) + ';\n'
     with open(os.path.join(KOK, 'uygulama', 'veri.js'), 'w', encoding='utf8') as f:
-        f.write('window.KITAPLIK = ' + json.dumps(liste, ensure_ascii=False) + ';\n')
+        f.write(veri_js_icerik)
+    ust_veri_js = os.path.join(os.path.dirname(KOK), 'veri.js')
+    with open(ust_veri_js, 'w', encoding='utf8') as f:
+        f.write(veri_js_icerik)
     import collections
     print(len(liste), 'kitap')
     print(collections.Counter(k['kategori'] for k in liste).most_common())
     print(collections.Counter((k['kategori'], k['alt_kategori']) for k in liste).most_common(30))
     print(collections.Counter(e for k in liste for e in k['etiketler']).most_common(40))
-    print('özetsiz:', sum(1 for k in liste if not k['ozet'] and not k['tanitim']), 'sayfa tahmini:', sum(k['sayfa_tahmini'] for k in liste))
+    print('özetsiz:', sum(1 for k in liste if not k['ozet'] and not k['tanitim']), 'sayfa tahmini:', sum(1 for k in liste if k['sayfa_tahmini']))
 
 
