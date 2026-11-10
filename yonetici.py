@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Sonsuz Okumalar - Kitap Yönetim & Güncelleme Paneli
-1. Tek tek sesli kitap ekleme (ISBN veya Kitap Adı + Yazar ile).
-2. Storytel CSV yükleme.
-3. ElevenReader JSON yükleme (Tarayıcı konsol scripti ile çekilen liste).
-4. Tek tıkla GitHub'a gönderip canlıya alma.
+1. ElevenReader / Harici JSON Yükleme
+2. Storytel CSV Yükleme
+3. Tek Tek Kitap Ekleme (Ad/Yazar veya ISBN)
+4. GitHub'a Gönderme (Canlıya Alma)
 """
 
 import os, sys, json, csv, time, shutil, subprocess, threading, hashlib
@@ -68,7 +68,7 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
 
         # 2. ElevenReader JSON İçe Aktarma
         if eleven_json_yolu:
-            log(f"ElevenReader listesi okunuyor: {os.path.basename(eleven_json_yolu)}")
+            log(f"ElevenReader JSON okunuyor: {os.path.basename(eleven_json_yolu)}")
             with open(eleven_json_yolu, 'r', encoding='utf8') as f:
                 eleven_data = json.load(f)
                 kitap_dizisi = eleven_data if isinstance(eleven_data, list) else eleven_data.get('books', [])
@@ -78,7 +78,6 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
                     yazar = (b.get('author') or b.get('yazar') or '').strip()
                     isbn = (b.get('isbn') or '').strip()
                     if not isbn:
-                        # Özel ElevenReader ID oluştur
                         h = hashlib.md5(f"eleven:{baslik}:{yazar}".encode('utf8')).hexdigest()[:10]
                         isbn = f"ELV{h}"
 
@@ -109,18 +108,16 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
             else:
                 yeni_kitaplar.append(tek_kitap_bilgi)
 
-        # Yeni kitapları tara (Storytel / Kitapyurdu)
+        # Yeni kitapları Storytel / Kitapyurdu üzerinde tara
         if yeni_kitaplar:
             log(f"{len(yeni_kitaplar)} adet yeni kitap internetten taranıyor...")
             for i, yk in enumerate(yeni_kitaplar, 1):
                 baslik = yk.get('baslik_csv') or yk['isbn']
                 yazar = yk.get('yazar_belirtilen', '')
-                log(f"[{i}/{len(yeni_kitaplar)}] İnceleniyor: {baslik}")
+                log(f"[{i}/{len(yeni_kitaplar)}] Taranıyor: {baslik}")
 
-                # Storytel ve Kitapyurdu'nda tara
                 st = toplayici.storytel(yk['isbn']) if yk['isbn'].isdigit() else {}
                 if not st and baslik:
-                    # Başlık ile ara
                     try:
                         s_arama = toplayici.indir('https://www.storytel.com/api/search.action?request_locale=tr&q=' + toplayici.up.quote(f"{baslik} {yazar}".strip()))
                         if s_arama:
@@ -151,7 +148,7 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_json_yolu=None, tek_kitap_bilg
         birlesik_liste = list(mevcut_havuz.values())
         toplayici.onb_yaz('hepsi.json', birlesik_liste)
 
-        log("Kategoriler, etiketler ve veritabanı güncelleniyor...")
+        log("Veritabanı ve arayüz güncelleniyor...")
         donusturulmus = [olustur.donustur(k) for k in birlesik_liste]
         olustur.veritabani(donusturulmus)
 
@@ -285,7 +282,7 @@ HTML_TEMPLATE = """
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sonsuz Okumalar - Kitap Ekleme & Yönetim</title>
+<title>Sonsuz Okumalar - Kitap Yönetim Paneli</title>
 <style>
   :root {
     --bg: #0c0e16;
@@ -305,18 +302,19 @@ HTML_TEMPLATE = """
   h1 { font-size: 1.4rem; color: var(--vurgu); }
   .sayac-kutu { background: var(--panel2); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
   .kart { background: var(--panel); border: 1px solid var(--kenar); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
-  h2 { font-size: 1.1rem; margin-bottom: 12px; color: var(--yazi); display: flex; align-items: center; gap: 8px; }
+  .kart.vurgulu-mor { border-color: rgba(139, 92, 246, 0.4); box-shadow: 0 4px 20px rgba(139, 92, 246, 0.1); }
+  h2 { font-size: 1.15rem; margin-bottom: 12px; color: var(--yazi); display: flex; align-items: center; gap: 8px; }
   p { font-size: 0.88rem; color: var(--soluk); margin-bottom: 14px; line-height: 1.5; }
   .form-grup { margin-bottom: 12px; }
   label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--soluk); margin-bottom: 4px; }
-  input, button, textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--kenar); background: var(--bg); color: var(--yazi); font-size: 0.9rem; }
+  input, button { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--kenar); background: var(--bg); color: var(--yazi); font-size: 0.9rem; }
   .izgara { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   button { background: var(--vurgu); color: #0c0e16; font-weight: 700; border: none; cursor: pointer; transition: opacity 0.2s; margin-top: 6px; }
   button:hover { opacity: 0.9; }
   button.yesil { background: var(--vurgu2); }
   button.mor { background: var(--mor); color: #fff; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .kod-kutu { background: #08090f; border: 1px solid #232a3e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.78rem; color: #a5b4fc; word-break: break-all; margin-bottom: 12px; user-select: all; }
+  .kod-kutu { background: #08090f; border: 1px solid #232a3e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.78rem; color: #a5b4fc; word-break: break-all; margin-bottom: 14px; user-select: all; }
   .durum-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; border: 1px solid var(--vurgu); padding: 12px 24px; border-radius: 999px; font-size: 0.9rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none; z-index: 100; }
   .durum-bar.aktif { display: flex; align-items: center; gap: 10px; }
   .spinner { width: 14px; height: 14px; border: 2px solid var(--vurgu); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -329,46 +327,41 @@ HTML_TEMPLATE = """
 <div class="kutu">
   <header>
     <div>
-      <h1>Sonsuz Okumalar - Kitap Yönetimi</h1>
+      <h1>Sonsuz Okumalar - Kitap Yönetim Paneli</h1>
       <span style="font-size:0.8rem;color:var(--soluk)">Storytel & ElevenReader Kütüphane Yöneticisi</span>
     </div>
     <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
   </header>
 
-  <!-- Yöntem 1: ElevenReader Entegrasyonu -->
-  <div class="kart" style="border-color: rgba(139, 92, 246, 0.35);">
-    <h2>🎧 ElevenReader Kütüphaneni Aktar</h2>
-    <p>ElevenReader'daki tüm kitaplarınızı tek tıkla çekip arşive ekleyebilirsiniz:</p>
-    <ol style="margin-left: 20px; font-size: 0.85rem; color: var(--soluk); line-height: 1.6; margin-bottom: 12px;">
-      <li>Tarayıcınızda <strong><a href="https://elevenreader.io/reader/library" target="_blank" style="color:var(--mor)">elevenreader.io/reader/library</a></strong> sayfasını açın ve giriş yapın.</li>
-      <li>Klavyeden <strong>F12</strong> (veya sağ tık -> İncele) tuşuna basıp <strong>Console (Konsol)</strong> sekmesine geçin.</li>
-      <li>Aşağıdaki JavaScript kodunu kopyalayıp Konsol'a yapıştırın ve <strong>Enter</strong>'a basın. (Otomatik olarak <code>elevenreader_kitaplar.json</code> dosyasını bilgisayarınıza indirecektir):</li>
-    </ol>
+  <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme -->
+  <div class="kart vurgulu-mor">
+    <h2 style="color: #c4b5fd;">🎧 ElevenReader / Harici Kitap Ekle (.json)</h2>
+    <p>ElevenReader kütüphanenizdeki kitapları tek tıkla arşive ekleyebilirsiniz. Tarayıcınızda <strong><a href="https://elevenreader.io/reader/library" target="_blank" style="color:#a78bfa">elevenreader.io/reader/library</a></strong> sayfasında <strong>F12 -> Console</strong> sekmesine aşağıdaki kodu yapıştırıp Enter'a basın. İnen <code>elevenreader_kitaplar.json</code> dosyasını buraya yükleyin:</p>
     <div class="kod-kutu">
-(async function(){console.log("ElevenReader kitapları toplanıyor...");let r=await fetch("https://api.elevenlabs.io/v1/reader/reads?limit=100",{headers:{"authorization":"Bearer "+(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k=>k.startsWith("firebase:authUser")))||{}).stsTokenManager||{}).accessToken}}).catch(()=>null);let list=[];if(r&&r.ok){let d=await r.json();(d.reads||d||[]).forEach(x=>list.push({title:x.title||x.name,author:x.author||"",duration_seconds:x.duration_seconds||0,cover_url:x.cover_image_url||x.image_url||""}));}if(!list.length){document.querySelectorAll("a[href*='/reader/'], div[class*='book'], div[class*='card']").forEach(el=>{let t=el.querySelector("h2,h3,h4,strong,span");let a=el.querySelector("p,small,span:nth-child(2)");let img=el.querySelector("img");if(t&&t.innerText.trim().length>1){list.push({title:t.innerText.trim(),author:a?a.innerText.trim():"",cover_url:img?img.src:""});}});}let b=new Blob([JSON.stringify(list,null,2)],{type:"application/json"});let a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="elevenreader_kitaplar.json";a.click();console.log(list.length+" kitap indirildi!");})();
+(async function(){console.log("ElevenReader taranıyor...");let t=null;try{for(let i=0;i<localStorage.length;i++){let k=localStorage.key(i);if(k.startsWith("firebase:authUser")){t=JSON.parse(localStorage.getItem(k)).stsTokenManager.accessToken;break;}}}catch(e){}let list=[];if(t){try{let r=await fetch("https://api.elevenlabs.io/v1/reader/reads?limit=200",{headers:{"authorization":"Bearer "+t}});if(r.ok){let d=await r.json();(d.reads||d||[]).forEach(x=>list.push({title:x.title||x.name||"",author:x.author||"",duration_seconds:x.duration_seconds||0,cover_url:x.cover_image_url||x.image_url||""}));}}catch(err){}}if(!list.length){document.querySelectorAll("a[href*='/reader/'], div[class*='book'], div[class*='card']").forEach(el=>{let tit=el.querySelector("h2,h3,h4,strong,span");let a=el.querySelector("p,small,span:nth-child(2)");let img=el.querySelector("img");if(tit&&tit.innerText.trim().length>1){list.push({title:tit.innerText.trim(),author:a?a.innerText.trim():"",cover_url:img?img.src:""});}});}if(!list.length){alert("Kitap bulunamadı! /reader/library sayfasında olduğunuzdan emin olun.");return;}let b=new Blob([JSON.stringify(list,null,2)],{type:"application/json"});let l=document.createElement("a");l.href=URL.createObjectURL(b);l.download="elevenreader_kitaplar.json";l.click();console.log(list.length+" kitap indirildi!");})();
     </div>
     <form id="elevenForm">
       <div class="form-grup">
-        <label>İndirilen <code>elevenreader_kitaplar.json</code> dosyasını seçin:</label>
+        <label>İndirilen JSON Dosyasını Seçin (<code>elevenreader_kitaplar.json</code>):</label>
         <input type="file" id="elevenDosya" accept=".json" required>
       </div>
-      <button type="submit" class="mor">ElevenReader Kitaplarını Arşive Aktar</button>
+      <button type="submit" class="mor">ElevenReader / Harici Kitapları Arşive Aktar</button>
     </form>
   </div>
 
-  <!-- Yöntem 2: Storytel CSV Yükleme -->
+  <!-- BÖLÜM 2: Storytel CSV Yükleme -->
   <div class="kart">
-    <h2>📁 Storytel CSV Dosyası Yükle</h2>
+    <h2>📁 Storytel CSV Dosyası Yükle (.csv)</h2>
     <p>Storytel'den aldığınız yeni bir CSV dosyasını seçin. <strong>Önceki kitaplarınız asla silinmez</strong>; yeni kitaplar mevcut arşive eklenir.</p>
     <form id="csvForm">
       <div class="form-grup">
         <input type="file" id="csvDosya" accept=".csv" required>
       </div>
-      <button type="submit">CSV'yi İçe Aktar ve Kitapları Otomatik Çek</button>
+      <button type="submit">Storytel CSV Dosyasını İçe Aktar</button>
     </form>
   </div>
 
-  <!-- Yöntem 3: Tek Kitap Ekleme -->
+  <!-- BÖLÜM 3: Tek Kitap Ekleme -->
   <div class="kart">
     <h2>➕ Tek Bir Kitap Ekle (ISBN veya Ad/Yazar)</h2>
     <p>İster Storytel ISBN'i, isterseniz doğrudan Kitap Adı ve Yazarını yazın. Kapak, özet, kategori ve yayınevi bilgileri internetten otomatik bulunup eklenir.</p>
@@ -397,7 +390,7 @@ HTML_TEMPLATE = """
     </form>
   </div>
 
-  <!-- Yöntem 4: GitHub'a Gönderme -->
+  <!-- BÖLÜM 4: GitHub'a Gönderme -->
   <div class="kart">
     <h2>🚀 Değişiklikleri GitHub Pages'e Yayınla</h2>
     <p>Yeni eklediğiniz kitapları tek tıkla GitHub deponuza gönderin. Böylece <code>sonsuztravma.github.io/Okunanlar</code> adresiniz hemen güncellensin.</p>
@@ -449,18 +442,6 @@ function surecBaslat() {
   }
 }
 
-document.getElementById('csvForm').onsubmit = async (e) => {
-  e.preventDefault();
-  const fileInput = document.getElementById('csvDosya');
-  if (!fileInput.files.length) return;
-  const formData = new FormData();
-  formData.append('dosya', fileInput.files[0]);
-  surecBaslat();
-  const res = await fetch('/csv-yukle', { method: 'POST', body: formData });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
-};
-
 document.getElementById('elevenForm').onsubmit = async (e) => {
   e.preventDefault();
   const fileInput = document.getElementById('elevenDosya');
@@ -469,6 +450,18 @@ document.getElementById('elevenForm').onsubmit = async (e) => {
   formData.append('dosya', fileInput.files[0]);
   surecBaslat();
   const res = await fetch('/eleven-yukle', { method: 'POST', body: formData });
+  const data = await res.json();
+  if (data.hata) alert(data.hata);
+};
+
+document.getElementById('csvForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById('csvDosya');
+  if (!fileInput.files.length) return;
+  const formData = new FormData();
+  formData.append('dosya', fileInput.files[0]);
+  surecBaslat();
+  const res = await fetch('/csv-yukle', { method: 'POST', body: formData });
   const data = await res.json();
   if (data.hata) alert(data.hata);
 };
