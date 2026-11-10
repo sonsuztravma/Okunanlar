@@ -8,17 +8,50 @@ const esc = s => (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const sure = sn => { if (!sn || sn <= 0) return 'Belirtilmemiş'; const s = Math.round(sn / 60); const sa = Math.floor(s / 60), dk = s % 60; return sa ? `${sa} sa ${String(dk).padStart(2, '0')} dk` : `${dk} dk`; };
 const tarih = t => t ? t.split('-').reverse().join('.') : '—';
 
+// Kalıcı Favoriler, Kişisel Notlar ve Tema Yönetimi (localStorage)
+const FAV_KEY = 'sonsuz_okumalar_favoriler_v1';
+const NOT_KEY = 'sonsuz_okumalar_notlar_v1';
+const TEMA_KEY = 'sonsuz_okumalar_tema_v1';
+
+let favoriler = new Set();
+let kisiselNotlar = {};
+try {
+  favoriler = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]'));
+  kisiselNotlar = JSON.parse(localStorage.getItem(NOT_KEY) || '{}');
+} catch (e) {}
+
+function favKaydet() {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify([...favoriler])); } catch (e) {}
+}
+function notKaydet(isbn, metin) {
+  const t = (metin || '').trim();
+  if (t) kisiselNotlar[isbn] = t;
+  else delete kisiselNotlar[isbn];
+  try { localStorage.setItem(NOT_KEY, JSON.stringify(kisiselNotlar)); } catch (e) {}
+  const k = K.find(x => x.isbn === isbn);
+  if (k) indeksGuncelle(k);
+}
+
+function indeksGuncelle(k) {
+  const notMetni = kisiselNotlar[k.isbn] || '';
+  k._ara_baslik = nrm([k.baslik, k.orijinal_baslik, k.yazar, k.seri, k.anlatici].filter(Boolean).join(' '));
+  k._ara_ozet = nrm([k.ozet, k.tanitim, k.orijinal_baslik, notMetni, k.etiketler.join(' '), k.kategori, k.alt_kategori, k.yayinevi].filter(Boolean).join(' '));
+}
+
 K.forEach(k => {
   k.etiketler = k.etiketler || [];
-  k.psk_kitap = Boolean(k.psk_kitap || k.isbn.startsWith('PSK_'));
+  k.psk_kitap = Boolean(k.psk_kitap || String(k.isbn).startsWith('PSK_'));
   k.akademik = Boolean(k.akademik || k.psk_kitap || k.etiketler.includes('Akademik'));
-  k.sesli_kitap = Boolean(k.sure_sn > 0 || !k.psk_kitap);
-  k._ara_baslik = nrm([k.baslik, k.orijinal_baslik, k.yazar, k.seri, k.anlatici].filter(Boolean).join(' '));
-  k._ara_ozet = nrm([k.ozet, k.tanitim, k.orijinal_baslik, k.etiketler.join(' '), k.kategori, k.alt_kategori, k.yayinevi].filter(Boolean).join(' '));
+  // Storytel'den gelen sesli kitaplar (ISBN'i rakamlardan oluşan 489 Storytel kaydı)
+  k.storytel_kitap = Boolean(k.storytel_kitap !== undefined ? k.storytel_kitap : (/^\d+$/.test(String(k.isbn)) && !k.psk_kitap));
+  k.sesli_kitap = k.storytel_kitap;
+  indeksGuncelle(k);
 });
 
 const durum = {
   etiketler: new Set(),
+  sadeceStorytel: false,
+  sadeceFavori: false,
   gorunum: 'grid',
   sekme: 'kitaplar',       // 'kitaplar' | 'istatistik' | 'akademik' | 'sesli'
   istatSekme: 'genel',     // 'genel' | 'akademik' | 'sesli'
@@ -28,7 +61,7 @@ const durum = {
   akDil: '',
   akKonu: '',
   akSirala: 'baslik-a',
-  // Sesli kitap sekmesi filtreleri
+  // Sesli kitap (Storytel) sekmesi filtreleri
   sesliMetrik: 'saat',     // 'saat' | 'kitap'
   sesliAra: '',
   sesliKat: '',
@@ -36,11 +69,94 @@ const durum = {
   sesliSirala: 'sure_sn-d'
 };
 
+// Tema Başlatma
+function temaUygula(tema) {
+  document.documentElement.dataset.tema = tema;
+  const btn = $('#temaBtn');
+  if (btn) btn.innerHTML = tema === 'acik' ? '🌙 Koyu Mod' : '☀️ Gündüz';
+  try { localStorage.setItem(TEMA_KEY, tema); } catch (e) {}
+}
+
+// Kategoriye göre şık tipografik kapak (kapak görseli bulunmayan kitaplar için)
+const KAT_GRADIENT = {
+  'Kurgu Dışı': 'linear-gradient(145deg, #1e1b4b 0%, #3b0764 55%, #0f172a 100%)',
+  'Roman': 'linear-gradient(145deg, #31102f 0%, #7c2d12 55%, #0f172a 100%)',
+  'Öykü': 'linear-gradient(145deg, #064e3b 0%, #115e59 55%, #0f172a 100%)',
+  'Klasikler': 'linear-gradient(145deg, #451a03 0%, #78350f 55%, #1c1917 100%)',
+  'Biyografi & Anı': 'linear-gradient(145deg, #1e3a8a 0%, #1d4ed8 55%, #0f172a 100%)'
+};
+function tipografikKapakHtml(k) {
+  const bg = KAT_GRADIENT[k.kategori] || 'linear-gradient(145deg, #1e1b4b 0%, #311042 52%, #0f172a 100%)';
+  const ust = k.alt_kategori || k.kategori || 'Kitap Arşivi';
+  return `<div class="tipografik-kapak" style="background:${bg}">
+    <span class="tk-ust">${esc(ust)}</span>
+    <div class="tk-baslik">${esc(k.baslik)}</div>
+    <span class="tk-yazar">${esc(k.yazar || '')}</span>
+  </div>`;
+}
+
+// APA 7 Akademik Kaynakça ve Excel/CSV Dışa Aktarma
+function apaKaynakcaMetni(k) {
+  const yz = k.yazar || 'Yazar Belirtilmemiş';
+  const yil = k.yayin_yili || 't.y.';
+  const baslik = k.baslik + (k.orijinal_baslik ? ` [${k.orijinal_baslik}]` : '');
+  const yayin = k.yayinevi || k.sesli_yayinci || '';
+  return `${yz} (${yil}). ${baslik}.${yayin ? ' ' + yayin + '.' : ''}`;
+}
+
+function dosyaIndir(ad, icerik, mime = 'text/plain;charset=utf-8') {
+  const blob = new Blob([icerik], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = ad;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 250);
+}
+
+function csvIndir(liste, dosyaAdi = 'sonsuz_okumalar_kitaplar.csv') {
+  const basliklar = ['Kayıt Kodu / ISBN', 'Kitap Adı', 'Türkçe Başlık Çevirisi', 'Yazar', 'Seslendiren', 'Ana Kategori', 'Alt Kategori', 'Yayınevi', 'Yayın Yılı', 'Sayfa Sayısı', 'Dinleme Süresi (Saat)', 'Dinleme Tarihi', 'Okur Puanı', 'Kişisel Not'];
+  const csvHucre = v => `"${String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+  const satirlar = [basliklar.map(csvHucre).join(';')];
+  liste.forEach(k => {
+    satirlar.push([
+      k.isbn,
+      k.baslik,
+      k.orijinal_baslik || '',
+      k.yazar || '',
+      k.anlatici || '',
+      k.kategori || '',
+      k.alt_kategori || '',
+      k.yayinevi || '',
+      k.yayin_yili || '',
+      k.sayfa || '',
+      k.sure_sn > 0 ? (k.sure_sn / 3600).toFixed(2) : '',
+      k.son_dinleme || '',
+      k.puan || '',
+      kisiselNotlar[k.isbn] || ''
+    ].map(csvHucre).join(';'));
+  });
+  // Excel'in Türkçe karakterleri doğrudan tanıması için UTF-8 BOM (\uFEFF) eklenir
+  dosyaIndir(dosyaAdi, '\uFEFF' + satirlar.join('\r\n'), 'text/csv;charset=utf-8');
+}
+
+function apaIndir(liste, dosyaAdi = 'apa7_akademik_kaynakca.txt') {
+  const siraliListe = [...liste].sort((a, b) => (a.yazar || '').localeCompare(b.yazar || '', 'tr') || (a.baslik || '').localeCompare(b.baslik || '', 'tr'));
+  const metin = `SONSUZ OKUMALAR - APA 7 AKADEMİK KAYNAKÇA LİSTESİ (${siraliListe.length} Eser)\r\n` +
+    `====================================================================\r\n\r\n` +
+    siraliListe.map((k, i) => `${i + 1}. ${apaKaynakcaMetni(k)}`).join('\r\n\r\n');
+  dosyaIndir(dosyaAdi, metin, 'text/plain;charset=utf-8');
+}
+
 const dolsec = (id, degerler) => { const el = $(id); degerler.forEach(v => { const o = document.createElement('option'); o.value = o.textContent = v; el.appendChild(o); }); };
 const say = (liste, alan, f = k => k[alan]) => { const m = new Map(); liste.forEach(k => [].concat(f(k)).filter(Boolean).forEach(v => m.set(v, (m.get(v) || 0) + 1))); return m; };
 const sirali = m => [...m.keys()].sort((a, b) => a.localeCompare(b, 'tr'));
 
 function hazirla() {
+  const kayitliTema = localStorage.getItem(TEMA_KEY) || 'koyu';
+  temaUygula(kayitliTema);
+
   const yillar = [...new Set(K.map(k => k.dinleme_yili).filter(Boolean))].sort((a, b) => b - a);
   dolsec('#fDinYil', yillar);
   if (K.some(k => !k.dinleme_yili)) {
@@ -60,20 +176,26 @@ function hazirla() {
   $('#istatYilSec').innerHTML = `<button data-yil="" class="aktif">Tüm Yıllar</button>` +
     yillar.map(y => `<button data-yil="${y}">${y}</button>`).join('');
 
-  // Hızlı kategori çipleri (üst bar) + Psikoloji Kitapları ve Akademik özel kısayolları
-  const pskSayi = K.filter(k => k.alt_kategori === 'Psikoloji Kitapları').length;
-  const sesliSayi = K.filter(k => k.sesli_kitap).length;
-  const katSirali = [...katSay.entries()].sort((a, b) => b[1] - a[1]);
-  $('#hizliKat').innerHTML =
-    `<button class="kat-cip aktif" data-kat="">Tümü <small>${K.length}</small></button>` +
-    `<button class="kat-cip ozel-ak" data-ozel="sesli">🎧 Sesli Kitaplar <small>${sesliSayi}</small></button>` +
-    (pskSayi ? `<button class="kat-cip ozel-psk" data-ozel="psk">🎓 Akademik &amp; Psikoloji <small>${pskSayi}</small></button>` : '') +
-    katSirali.map(([k, n]) => `<button class="kat-cip" data-kat="${esc(k)}">${esc(k)} <small>${n}</small></button>`).join('');
-
+  hizliKatGuncelle();
   guncelleAlt();
   const et = say(K, 'etiketler', k => k.etiketler);
   $('#etiketBulut').innerHTML = [...et.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'tr'))
     .map(([e, n]) => `<span class="et" data-e="${esc(e)}">${esc(e)}<small>${n}</small></span>`).join('');
+}
+
+function hizliKatGuncelle() {
+  const katSay = say(K, 'kategori');
+  const pskSayi = K.filter(k => k.alt_kategori === 'Psikoloji Kitapları').length;
+  const storytelSayi = K.filter(k => k.storytel_kitap).length;
+  const favNotSayi = K.filter(k => favoriler.has(k.isbn) || kisiselNotlar[k.isbn]).length;
+  const katSirali = [...katSay.entries()].sort((a, b) => b[1] - a[1]);
+
+  $('#hizliKat').innerHTML =
+    `<button class="kat-cip" data-kat="">Tümü <small>${K.length}</small></button>` +
+    `<button class="kat-cip ozel-ak" data-ozel="sesli" title="Sadece Storytel ile eklenen sesli kitapları göster">🎧 Sesli Kitaplar (Storytel) <small>${storytelSayi}</small></button>` +
+    (pskSayi ? `<button class="kat-cip ozel-psk" data-ozel="psk" title="Akademik ve Psikoloji kitaplarını göster">🎓 Akademik &amp; Psikoloji <small>${pskSayi}</small></button>` : '') +
+    `<button class="kat-cip ozel-fav" data-ozel="fav" title="Favorilerim ve Kişisel Not Eklediğim Kitaplar">⭐ Favoriler &amp; Notlarım <small>${favNotSayi}</small></button>` +
+    katSirali.map(([k, n]) => `<button class="kat-cip" data-kat="${esc(k)}">${esc(k)} <small>${n}</small></button>`).join('');
 }
 
 function guncelleAlt() {
@@ -87,6 +209,8 @@ function aktifFiltreleriListele() {
   const f = [];
   const ekle = (etiket, sifirla) => f.push({ etiket, sifirla });
   if ($('#ara').value.trim()) ekle(`Arama: "${$('#ara').value.trim()}"`, () => $('#ara').value = '');
+  if (durum.sadeceStorytel) ekle('Kaynak: Storytel Sesli Kitaplar', () => durum.sadeceStorytel = false);
+  if (durum.sadeceFavori) ekle('⭐ Favoriler & Notlarım', () => durum.sadeceFavori = false);
   if ($('#fDinYil').value) ekle(`Dinleme Yılı: ${$('#fDinYil').value === 'belirsiz' ? 'Tarihi Belirsiz' : $('#fDinYil').value}`, () => $('#fDinYil').value = '');
   if ($('#fKat').value) ekle(`Kategori: ${$('#fKat').value}`, () => { $('#fKat').value = ''; guncelleAlt(); });
   if ($('#fAlt').value) ekle(`Alt: ${$('#fAlt').value}`, () => $('#fAlt').value = '');
@@ -104,6 +228,8 @@ function filtreKoşulu(k, q, ozetteDe, yilHaric = false) {
   const v = id => $(id).value, n = id => $(id).value === '' ? null : parseFloat($(id).value);
   const yz = nrm(v('#fYazar')), an = nrm(v('#fAnlatici'));
   const yMin = n('#yilMin'), yMax = n('#yilMax'), sMin = n('#sfMin'), sMax = n('#sfMax'), rMin = n('#srMin'), rMax = n('#srMax');
+  if (durum.sadeceStorytel && !k.storytel_kitap) return false;
+  if (durum.sadeceFavori && !favoriler.has(k.isbn) && !kisiselNotlar[k.isbn]) return false;
   if (q.length && !q.every(t => k._ara_baslik.includes(t) || (ozetteDe && k._ara_ozet.includes(t)))) return false;
   if (!yilHaric && v('#fDinYil')) {
     if (v('#fDinYil') === 'belirsiz') { if (k.dinleme_yili) return false; }
@@ -156,14 +282,17 @@ function kartHtml(k, q) {
     ? `<span class="sure-rozet">🎧 ${sure(k.sure_sn)}</span>`
     : `<span class="sure-rozet ${k.akademik ? 'ak-rozet' : 'psk-rozet'}">${k.akademik ? '🎓 Akademik' : '🧠 Psikoloji'}</span>`;
   const dilEtiket = k.dil === 'en' ? `<span class="dil-etiket" title="Türkçe çeviri özetli yabancı eser">Çeviri Özet</span>` : '';
+  const notVar = kisiselNotlar[k.isbn] ? `<span class="not-etiket" title="Bu kitapta kişisel notunuz var">📝 Not</span>` : '';
+  const favMi = favoriler.has(k.isbn);
   return `<article class="kart" data-id="${k.isbn}">
     <div class="kapak">
-      ${kapak ? `<img loading="lazy" src="kapaklar/${kapak}" alt="${esc(k.baslik)}">` : `<div class="yok">${esc(k.baslik)}</div>`}
+      ${kapak ? `<img loading="lazy" src="kapaklar/${kapak}" alt="${esc(k.baslik)}">` : tipografikKapakHtml(k)}
+      <button class="kart-fav-btn ${favMi ? 'aktif' : ''}" data-fav-id="${k.isbn}" title="${favMi ? 'Favorilerden çıkar' : 'Favorilere ekle'}" aria-label="Favori">${favMi ? '★' : '☆'}</button>
       ${puan}
       ${altRozet}
     </div>
     <div class="bilgi">
-      <span class="kat">${esc(k.kategori)}${k.alt_kategori ? ' › ' + esc(k.alt_kategori) : ''}${dilEtiket}</span>
+      <span class="kat">${esc(k.kategori)}${k.alt_kategori ? ' › ' + esc(k.alt_kategori) : ''}${dilEtiket}${notVar}</span>
       <b>${vurgula(k.baslik, q)}</b>
       <span class="yz">${vurgula(k.yazar || 'Yazar belirtilmemiş', q)}${k.anlatici ? ` · <small title="Seslendiren">🎙️ ${esc(k.anlatici)}</small>` : ''}</span>
       <div class="alt-meta">
@@ -175,27 +304,31 @@ function kartHtml(k, q) {
 }
 
 let aktifFilSonuc = [];
+let sonFiltreliListe = [];
+
 function ciz() {
   const { r, q, yilKarsilastirKume } = filtrele();
+  sonFiltreliListe = r;
   const toplam = r.reduce((s, k) => s + (k.sure_sn || 0), 0);
-  const sesliSay = r.filter(k => k.sesli_kitap).length;
+  const sesliSay = r.filter(k => k.storytel_kitap).length;
   const akSay = r.filter(k => k.akademik).length;
   $('#araTemizle').hidden = !$('#ara').value;
-  $('#sayac').innerHTML = `<b>${r.length}</b> kitap (<b>${sesliSay}</b> sesli · <b>${akSay}</b> akademik/psikoloji) · toplam <b>${Math.round(toplam / 3600).toLocaleString('tr-TR')}</b> saat dinleme`;
+  $('#sayac').innerHTML = `<b>${r.length}</b> kitap (<b>${sesliSay}</b> Storytel sesli · <b>${akSay}</b> akademik/psikoloji) · toplam <b>${Math.round(toplam / 3600).toLocaleString('tr-TR')}</b> saat`;
   $('#filtreUygula').textContent = `Sonuçları Göster (${r.length})`;
 
   // Etiket bulutu, hızlı kategori ve hızlı yıl butonları durumları
   document.querySelectorAll('.et').forEach(e => e.classList.toggle('secili', durum.etiketler.has(e.dataset.e)));
   const secKat = $('#fKat').value;
   const secAlt = $('#fAlt').value;
-  const secSrMin = $('#srMin').value;
   document.querySelectorAll('#hizliKat .kat-cip').forEach(b => {
     if (b.dataset.ozel === 'psk') {
-      b.classList.toggle('aktif', secAlt === 'Psikoloji Kitapları');
+      b.classList.toggle('aktif', secAlt === 'Psikoloji Kitapları' && !durum.sadeceStorytel && !durum.sadeceFavori);
     } else if (b.dataset.ozel === 'sesli') {
-      b.classList.toggle('aktif', secSrMin === '0.05');
+      b.classList.toggle('aktif', durum.sadeceStorytel);
+    } else if (b.dataset.ozel === 'fav') {
+      b.classList.toggle('aktif', durum.sadeceFavori);
     } else {
-      b.classList.toggle('aktif', b.dataset.kat === secKat && secAlt !== 'Psikoloji Kitapları' && secSrMin !== '0.05');
+      b.classList.toggle('aktif', b.dataset.kat === secKat && secAlt !== 'Psikoloji Kitapları' && !durum.sadeceStorytel && !durum.sadeceFavori);
     }
   });
   const secYil = $('#fDinYil').value;
@@ -218,6 +351,28 @@ function ciz() {
   }
 }
 
+// Benzer Kitaplar Öneri Motoru
+function benzerKitaplarBul(hedef, adet = 6) {
+  const hEtiket = new Set(hedef.etiketler || []);
+  const hAlanlar = new Set(hedef.akademik ? akademikAlanBelirle(hedef) : []);
+  const adaylar = [];
+  for (const k of K) {
+    if (k.isbn === hedef.isbn) continue;
+    let skor = 0;
+    if (hedef.yazar && k.yazar === hedef.yazar) skor += 8;
+    if (hedef.alt_kategori && k.alt_kategori === hedef.alt_kategori) skor += 4;
+    else if (hedef.kategori === k.kategori) skor += 1.5;
+    if (hedef.yayinevi && k.yayinevi === hedef.yayinevi) skor += 1.5;
+    for (const e of (k.etiketler || [])) if (hEtiket.has(e) && e !== 'Akademik' && e !== 'Yabancı Dil (Çeviri Özet)') skor += 1.8;
+    if (hedef.akademik && k.akademik) {
+      for (const al of akademikAlanBelirle(k)) if (hAlanlar.has(al)) skor += 3;
+    }
+    if (skor > 2) adaylar.push({ k, skor });
+  }
+  adaylar.sort((a, b) => b.skor - a.skor || (b.k.puan || 0) - (a.k.puan || 0));
+  return adaylar.slice(0, adet).map(x => x.k);
+}
+
 function modalAc(isbn) {
   const k = K.find(x => x.isbn === isbn);
   if (!k) return;
@@ -228,17 +383,30 @@ function modalAc(isbn) {
   const ozetBaslik = yabanciMi ? '🇹🇷 Türkçe Özet & Tanıtım (Çeviri)' : 'Kitap Özeti & Arka Kapak Tanıtımı';
   const tanitimBaslik = yabanciMi ? '🇬🇧 Orijinal Tanıtım Yazısı (Amazon / Goodreads)' : 'Basılı Kitap Yayınevi Tanıtımı';
   const temizOzet = (k.ozet || '').replace(/^📌\s*\[?Türkçe Başlık Çevirisi:[^\n]*\n+/i, '').trim();
+  const favMi = favoriler.has(k.isbn);
+  const mevcutNot = kisiselNotlar[k.isbn] || '';
+  const benzerler = benzerKitaplarBul(k, 6);
 
   $('#modalIcerik').innerHTML = `<div class="detay">
     <div class="sol">
-      ${kapaklar.length ? `<img id="mk" src="kapaklar/${kapaklar[0][1]}" alt="${esc(k.baslik)}">` : `<div class="yok" style="min-height:260px;display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;background:var(--panel2);border-radius:12px">${esc(k.baslik)}</div>`}
+      ${kapaklar.length ? `<img id="mk" src="kapaklar/${kapaklar[0][1]}" alt="${esc(k.baslik)}">` : tipografikKapakHtml(k)}
       ${kapaklar.length > 1 ? `<div class="kapak-sec">${kapaklar.map((c, i) => `<button class="${i === 0 ? 'aktif' : ''}" data-k="${c[1]}">${c[0]}</button>`).join('')}</div>` : ''}
     </div>
     <div class="sag">
-      <span class="ust-kat">${esc(k.kategori)}${k.alt_kategori ? ' › ' + esc(k.alt_kategori) : ''}${k.akademik ? ' · 🎓 Akademik & Psikoloji' : ''}</span>
+      <span class="ust-kat">${esc(k.kategori)}${k.alt_kategori ? ' › ' + esc(k.alt_kategori) : ''}${k.akademik ? ' · 🎓 Akademik & Psikoloji' : ''}${k.storytel_kitap ? ' · 🎧 Storytel' : ''}</span>
       <h2>${vurgula(k.baslik, q)}</h2>
       ${k.orijinal_baslik ? `<div class="alt-baslik-ceviri">🇹🇷 Türkçe Başlık Çevirisi: <strong>${vurgula(k.orijinal_baslik, q)}</strong></div>` : ''}
       <div class="yz">${vurgula(k.yazar || 'Yazar belirtilmemiş', q)}</div>
+
+      <div class="modal-aksiyon-bar">
+        <button id="modalFavBtn" class="modal-aksiyon-btn ${favMi ? 'aktif' : ''}" data-isbn="${k.isbn}">
+          ${favMi ? '★ Favorilerimde' : '☆ Favorilere Ekle'}
+        </button>
+        <button id="modalApaKopyalaBtn" class="modal-aksiyon-btn" data-isbn="${k.isbn}" title="${esc(apaKaynakcaMetni(k))}">
+          📋 APA Kaynakça Kopyala
+        </button>
+      </div>
+
       ${k.etiketler.length ? `<div class="detay-etiketler">${k.etiketler.map(e => `<span class="et" data-modal-e="${esc(e)}">#${esc(e)}</span>`).join('')}</div>` : ''}
       <div class="meta-izgara">
         ${kutu('Seslendiren', k.anlatici)}
@@ -254,9 +422,33 @@ function modalAc(isbn) {
         ${kutu('Kayıt Kodu', k.isbn)}
         ${kutu('ISBN (Basılı)', k.basili_isbn)}
       </div>
+
+      <div class="kisisel-not-kutu">
+        <h3><span>📝 Kişisel Notum &amp; Alıntılar</span><small id="notDurumBilgi">${mevcutNot ? '✓ Kayıtlı not var' : ''}</small></h3>
+        <textarea id="kisiselNotAlan" placeholder="Bu kitapla ilgili kişisel notlarınızı, önemli kavramları, sayfa numaralarını veya alıntıları buraya yazabilirsiniz…">${esc(mevcutNot)}</textarea>
+        <div class="kisisel-not-alt">
+          <small>Notlarınız tarayıcınızda otomatik saklanır ve üstteki arama çubuğuna dahil edilir.</small>
+          <button id="notKaydetBtn" class="arac-btn" data-isbn="${k.isbn}">💾 Notu Kaydet</button>
+        </div>
+      </div>
+
       ${temizOzet ? `<div class="metin-kutu"><h3>${ozetBaslik}</h3><p>${vurgula(temizOzet, q)}</p></div>` : ''}
       ${k.tanitim && k.tanitim !== temizOzet && k.tanitim !== k.ozet ? `<div class="metin-kutu"><h3>${tanitimBaslik}</h3><p>${vurgula(k.tanitim, q)}</p></div>` : ''}
       ${!temizOzet && !k.tanitim ? '<p style="color:var(--soluk)">Bu kitap için tanıtım metni bulunamadı.</p>' : ''}
+
+      ${benzerler.length ? `<div class="benzer-bolum">
+        <h3>🔗 Benzer Kitaplar (Aynı Yazar, Konu veya Klinik Alan)</h3>
+        <div class="benzer-izgara">
+          ${benzerler.map(b => {
+            const bKapak = b.kapak_sesli || b.kapak_basili;
+            return `<div class="benzer-kart" data-benzer-id="${b.isbn}">
+              ${bKapak ? `<img loading="lazy" src="kapaklar/${bKapak}" alt="${esc(b.baslik)}">` : tipografikKapakHtml(b)}
+              <b>${esc(b.baslik)}</b>
+              <small>${esc(b.yazar || '')}</small>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
     </div>
   </div>`;
   $('#modal').hidden = false;
@@ -307,7 +499,6 @@ function akademikAlanBelirle(k) {
 }
 
 function akademikIstatistikCiz(ustBarHtml) {
-  // Hem docx listelerinden gelen 278 kitap hem de arşivdeki tüm psikoloji/akademik kitaplar
   const akTum = K.filter(k => k.psk_kitap || k.akademik);
   const docxEnSay = akTum.filter(k => k.isbn.startsWith('PSK_EN_')).length;
   const docxTrSay = akTum.filter(k => k.isbn.startsWith('PSK_TR_')).length;
@@ -374,7 +565,11 @@ function akademikIstatistikCiz(ustBarHtml) {
     ${ustBarHtml}
     <div class="istat-bilgi-cubuk">
       <span>🎓 <b>Akademik Psikoloji, Psikanaliz ve Travma Kitapları Koleksiyonu:</b> Word dosyalarındaki tüm benzersiz kitaplar (<b>${docxEnSay}</b> yabancı travma kitabı + <b>${docxTrSay}</b> Türkçe psikoloji kitabı = <b>${docxEnSay + docxTrSay}</b> basılı eser ve <b>${sesliPskSay}</b> sesli psikoloji eseri, toplam <b>${akTum.length}</b> kitap) eksiksiz olarak aşağıda yer almaktadır.</span>
-      <button id="akTumunuKitapliktaGor">Kitaplık Sekmesinde Aç →</button>
+      <div class="disa-aktar-grup">
+        <button id="akCsvBtn" class="arac-btn">📥 Excel / CSV (${akFil.length})</button>
+        <button id="akApaBtn" class="arac-btn">🎓 APA Kaynakça (${akFil.length})</button>
+        <button id="akTumunuKitapliktaGor">Kitaplıkta Aç →</button>
+      </div>
     </div>
 
     <div class="sayilar">
@@ -465,10 +660,15 @@ function akademikIstatistikCiz(ustBarHtml) {
   if (ss) ss.addEventListener('change', e => { durum.akSirala = e.target.value; akademikIstatistikCiz(ustBarHtml); });
   const sfBtn = $('#akFiltreSifirla');
   if (sfBtn) sfBtn.addEventListener('click', () => { durum.akAra = ''; durum.akDil = ''; durum.akKonu = ''; akademikIstatistikCiz(ustBarHtml); });
+  const akCsv = $('#akCsvBtn');
+  if (akCsv) akCsv.addEventListener('click', () => csvIndir(akFil, 'akademik_psikoloji_kitaplari.csv'));
+  const akApa = $('#akApaBtn');
+  if (akApa) akApa.addEventListener('click', () => apaIndir(akFil, 'apa7_akademik_psikoloji_kaynakca.txt'));
 }
 
 function sesliIstatistikCiz(ustBarHtml) {
-  const sesliTum = K.filter(k => k.sesli_kitap);
+  // Yalnızca Storytel'den gelen sesli kitaplar (489 Storytel kaydı)
+  const sesliTum = K.filter(k => k.storytel_kitap);
   const m = durum.sesliMetrik; // 'saat' | 'kitap'
   const degerVer = k => m === 'saat' ? ((k.sure_sn || 0) / 3600) : 1;
   const bicimle = v => m === 'saat' ? `${Math.round(v * 10) / 10} sa` : `${v} kitap`;
@@ -509,8 +709,8 @@ function sesliIstatistikCiz(ustBarHtml) {
     const ySn = yk.reduce((s, k) => s + (k.sure_sn || 0), 0);
     const ySf = yk.reduce((s, k) => s + (k.sayfa || 0), 0);
     const secili = String(y) === durum.sesliYil;
-    return `<div class="yil-kart ${secili ? 'secili' : ''}" data-sesli-yil="${y}" title="${y} yılındaki sesli kitapları filtrelemek için tıklayın">
-      <div class="yil-kart-ust"><strong>🎧 ${y} Yılı Dinlemeleri</strong><span>${secili ? '✓ Seçili yıl' : 'Tıkla & filtrele'}</span></div>
+    return `<div class="yil-kart ${secili ? 'secili' : ''}" data-sesli-yil="${y}" title="${y} yılındaki Storytel sesli kitaplarını filtrelemek için tıklayın">
+      <div class="yil-kart-ust"><strong>🎧 ${y} Yılı Storytel Dinlemeleri</strong><span>${secili ? '✓ Seçili yıl' : 'Tıkla & filtrele'}</span></div>
       <div class="yil-metrikler">
         <div><b>${yk.length}</b>Sesli Kitap</div>
         <div><b>${Math.round(ySn / 3600).toLocaleString('tr-TR')} sa</b>Dinleme Süresi</div>
@@ -553,22 +753,25 @@ function sesliIstatistikCiz(ustBarHtml) {
   $('#sekIstatistik').innerHTML = `
     ${ustBarHtml}
     <div class="istat-bilgi-cubuk">
-      <span>🎧 <b>Storytel &amp; ElevenReader Sesli Kitaplar Arşivi:</b> Dinleme süreleriyle kaydedilmiş toplam <b>${sesliTum.length} sesli kitap</b> (toplam <b>${toplamSaat.toLocaleString('tr-TR')} saat</b> / <b>≈ ${(toplamSn / 86400).toFixed(1)} tam gün</b> kesintisiz dinleme) burada yer alır.</span>
-      <div class="hap-grup">
-        <button data-sesli-m="saat" class="${m === 'saat' ? 'aktif' : ''}">Süreye Göre (Saat)</button>
-        <button data-sesli-m="kitap" class="${m === 'kitap' ? 'aktif' : ''}">Kitap Sayısına Göre</button>
+      <span>🎧 <b>Storytel Sesli Kitaplar Arşivi:</b> Yalnızca Storytel üzerinden dinlenen <b>${sesliTum.length} sesli kitap</b> (toplam <b>${toplamSaat.toLocaleString('tr-TR')} saat</b> / <b>≈ ${(toplamSn / 86400).toFixed(1)} tam gün</b> dinleme süresiyle) burada yer alır.</span>
+      <div class="disa-aktar-grup">
+        <button id="sesliCsvBtn" class="arac-btn">📥 Excel / CSV (${sesliFil.length})</button>
+        <div class="hap-grup">
+          <button data-sesli-m="saat" class="${m === 'saat' ? 'aktif' : ''}">Süreye Göre (Saat)</button>
+          <button data-sesli-m="kitap" class="${m === 'kitap' ? 'aktif' : ''}">Kitap Sayısına Göre</button>
+        </div>
       </div>
     </div>
 
     <div class="yil-izgara">${yilKartlari}</div>
 
     <div class="sayilar">
-      <div class="sayi-kart"><b>${sesliTum.length}</b><span>Sesli Kitap</span><small>Storytel &amp; ElevenReader</small></div>
+      <div class="sayi-kart"><b>${sesliTum.length}</b><span>Storytel Sesli Kitap</span><small>Dinleme süreli arşiv</small></div>
       <div class="sayi-kart"><b>${toplamSaat.toLocaleString('tr-TR')} sa</b><span>Toplam Dinleme Süresi</span><small>≈ ${(toplamSn / 86400).toFixed(1)} tam gün</small></div>
       <div class="sayi-kart"><b>${ortSaat} sa</b><span>Ortalama Süre</span><small>Sesli kitap başına</small></div>
       <div class="sayi-kart"><b>${anlaticiSay}</b><span>Farklı Seslendiren</span><small>${yazarSay} farklı yazar</small></div>
       <div class="sayi-kart"><b>${toplamSayfa.toLocaleString('tr-TR')}</b><span>Eşdeğer Sayfa</span><small>Ort. ${Math.round(toplamSayfa / sesliTum.length)} sf/kitap</small></div>
-      <div class="sayi-kart"><b>★ ${ortPuan}</b><span>Ortalama Puan</span><small>${puanlilar.length} puanlı sesli kitap</small></div>
+      <div class="sayi-kart"><b>★ ${ortPuan}</b><span>Storytel Okur Puanı</span><small>${puanlilar.length} puanlı kitap</small></div>
     </div>
 
     <div class="istat">
@@ -577,7 +780,7 @@ function sesliIstatistikCiz(ustBarHtml) {
         ${cubukSesli(top(toplaSesli(k => k.anlatici), 15), 'anlatici')}
       </div>
       <div class="kutu">
-        <div class="kutu-ust"><h3>Sesli Kitap Kategorileri</h3><small>${metrikEtiket} · Tıkla filtrele</small></div>
+        <div class="kutu-ust"><h3>Storytel Kategorileri</h3><small>${metrikEtiket} · Tıkla filtrele</small></div>
         ${cubukSesli(top(toplaSesli(k => k.kategori), 15), 'kategori')}
       </div>
       <div class="kutu">
@@ -593,7 +796,7 @@ function sesliIstatistikCiz(ustBarHtml) {
         ${cubukSesli([...ayMap.entries()].sort())}
       </div>
       <div class="kutu">
-        <div class="kutu-ust"><h3>En Uzun Dinlenen Sesli Kitaplar</h3><small>Detay için tıklayın</small></div>
+        <div class="kutu-ust"><h3>En Uzun Dinlenen Storytel Kitapları</h3><small>Detay için tıklayın</small></div>
         ${enUzunSesli.map(k => `<div class="mini-satir" data-kitap="${k.isbn}">
           <div style="min-width:0"><b>${esc(k.baslik)}</b><small>${esc(k.yazar)}${k.anlatici ? ' · 🎙️ ' + esc(k.anlatici) : ''}</small></div>
           <span class="mini-sag">🎧 ${sure(k.sure_sn)}</span>
@@ -602,9 +805,9 @@ function sesliIstatistikCiz(ustBarHtml) {
     </div>
 
     <div class="ak-katalog-baslik" id="sesliKatalogBaslik">
-      <h3>🎧 Sesli Kitaplar ve Dinleme Süreleri <small style="color:var(--vurgu-acik);font-size:0.86rem">(${sesliFil.length} sesli kitap · toplam ${Math.round(filToplamSn / 3600).toLocaleString('tr-TR')} saat)</small></h3>
+      <h3>🎧 Storytel Sesli Kitaplar ve Dinleme Süreleri <small style="color:var(--vurgu-acik);font-size:0.86rem">(${sesliFil.length} sesli kitap · toplam ${Math.round(filToplamSn / 3600).toLocaleString('tr-TR')} saat)</small></h3>
       <div class="ak-katalog-araclar">
-        <input id="sesliAraInput" type="search" placeholder="Sesli kitap, yazar veya seslendiren ara…" value="${esc(durum.sesliAra)}">
+        <input id="sesliAraInput" type="search" placeholder="Storytel kitabı, yazar veya seslendiren ara…" value="${esc(durum.sesliAra)}">
         <select id="sesliKatSec">
           <option value="">Tüm Kategoriler (${sesliTum.length})</option>
           ${sesliKategoriler.map(([kat, n]) => `<option value="${esc(kat)}" ${durum.sesliKat === kat ? 'selected' : ''}>${esc(kat)} (${n})</option>`).join('')}
@@ -627,7 +830,7 @@ function sesliIstatistikCiz(ustBarHtml) {
     </div>
 
     <div id="sesliListeGrid" class="grid">
-      ${sesliFil.length ? sesliFil.map(k => kartHtml(k, qSesli)).join('') : '<div class="bos-sonuc">Arama kriterlerinize uygun sesli kitap bulunamadı.</div>'}
+      ${sesliFil.length ? sesliFil.map(k => kartHtml(k, qSesli)).join('') : '<div class="bos-sonuc">Arama kriterlerinize uygun Storytel sesli kitabı bulunamadı.</div>'}
     </div>
   `;
 
@@ -649,11 +852,13 @@ function sesliIstatistikCiz(ustBarHtml) {
   if (sSir) sSir.addEventListener('change', e => { durum.sesliSirala = e.target.value; sesliIstatistikCiz(ustBarHtml); });
   const sSif = $('#sesliFiltreSifirla');
   if (sSif) sSif.addEventListener('click', () => { durum.sesliAra = ''; durum.sesliKat = ''; durum.sesliYil = ''; sesliIstatistikCiz(ustBarHtml); });
+  const sCsv = $('#sesliCsvBtn');
+  if (sCsv) sCsv.addEventListener('click', () => csvIndir(sesliFil, 'storytel_sesli_kitaplar.csv'));
 }
 
 function istatistikCiz(liste, yilKume) {
   const akSayisi = K.filter(k => k.psk_kitap || k.akademik).length;
-  const sesliSayisi = K.filter(k => k.sesli_kitap).length;
+  const storytelSayisi = K.filter(k => k.storytel_kitap).length;
   const ustBarHtml = `<div class="istat-alt-bar">
     <div class="istat-alt-sekmeler">
       <button class="istat-sek-btn ${durum.istatSekme === 'genel' ? 'aktif' : ''}" data-ist-sek="genel">
@@ -663,7 +868,7 @@ function istatistikCiz(liste, yilKume) {
         🎓 Akademik &amp; Psikoloji Kitapları <small>${akSayisi}</small>
       </button>
       <button class="istat-sek-btn ${durum.istatSekme === 'sesli' ? 'aktif' : ''}" data-ist-sek="sesli">
-        🎧 Sesli Kitaplar (Storytel) <small>${sesliSayisi}</small>
+        🎧 Sesli Kitaplar (Storytel) <small>${storytelSayisi}</small>
       </button>
     </div>
   </div>`;
@@ -764,7 +969,7 @@ function istatistikCiz(liste, yilKume) {
     <span>Seçili filtrelere göre <b>${liste.length} kitap</b> (${payYuzde}%) üzerinden istatistikler gösteriliyor. Grafik çubuklarına tıklayarak filtreyi daraltabilirsiniz.</span>
     <button id="istatKitaplariGor">Bu ${liste.length} Kitabı Listele →</button>
   </div>` : `<div class="istat-bilgi-cubuk">
-    <span>💡 İpucu: Üstteki sekmelerden <b>🎓 Akademik &amp; Psikoloji Kitapları (${akSayisi})</b> veya <b>🎧 Sesli Kitaplar (${sesliSayisi})</b> özel görünümlerine geçebilir, ya da aşağıdaki grafik çubuklarına tıklayarak filtreleyebilirsiniz.</span>
+    <span>💡 İpucu: Üstteki sekmelerden <b>🎓 Akademik &amp; Psikoloji Kitapları (${akSayisi})</b> veya <b>🎧 Sesli Kitaplar - Storytel (${storytelSayisi})</b> özel görünümlerine geçebilir, ya da aşağıdaki grafik çubuklarına tıklayarak filtreleyebilirsiniz.</span>
   </div>`;
 
   const listeSesliSay = liste.filter(k => k.sure_sn > 0).length || 1;
@@ -774,7 +979,7 @@ function istatistikCiz(liste, yilKume) {
     ${filtreBilgi}
     <div class="yil-izgara">${yilKartlari}</div>
     <div class="sayilar">
-      <div class="sayi-kart"><b>${liste.length}</b><span>Toplam Kitap</span><small>${liste.filter(k => k.sesli_kitap).length} sesli · ${liste.filter(k => k.akademik).length} akademik</small></div>
+      <div class="sayi-kart"><b>${liste.length}</b><span>Toplam Kitap</span><small>${liste.filter(k => k.storytel_kitap).length} Storytel · ${liste.filter(k => k.akademik).length} akademik</small></div>
       <div class="sayi-kart"><b>${Math.round(toplamSn / 3600).toLocaleString('tr-TR')} sa</b><span>Toplam Dinleme</span><small>≈ ${(toplamSn / 86400).toFixed(1)} tam gün</small></div>
       <div class="sayi-kart"><b>${toplamSayfa.toLocaleString('tr-TR')}</b><span>Toplam Sayfa</span><small>Ort. ${Math.round(toplamSayfa / liste.length)} sf/kitap</small></div>
       <div class="sayi-kart"><b>${new Set(liste.map(k => k.yazar).filter(Boolean)).size}</b><span>Farklı Yazar</span><small>${new Set(liste.map(k => k.yayinevi).filter(Boolean)).size} yayınevi</small></div>
@@ -849,17 +1054,26 @@ $('#mobilSirala').addEventListener('change', () => { $('#sirala').value = $('#mo
 
 $('#araTemizle').onclick = () => { $('#ara').value = ''; $('#ara').focus(); ciz(); };
 
+$('#temaBtn').onclick = () => {
+  const mevcut = document.documentElement.dataset.tema || 'koyu';
+  temaUygula(mevcut === 'acik' ? 'koyu' : 'acik');
+};
+
+$('#csvIndirBtn').onclick = () => csvIndir(sonFiltreliListe, 'sonsuz_okumalar_secili_kitaplar.csv');
+$('#apaIndirBtn').onclick = () => apaIndir(sonFiltreliListe, 'sonsuz_okumalar_apa7_kaynakca.txt');
+
 $('#fKat').addEventListener('change', () => { guncelleAlt(); ciz(); });
 $('#hizliKat').addEventListener('click', e => {
   const b = e.target.closest('.kat-cip');
   if (!b) return;
   if (b.dataset.ozel === 'psk') {
+    durum.sadeceStorytel = false;
+    durum.sadeceFavori = false;
     if ($('#fAlt').value === 'Psikoloji Kitapları') {
       $('#fKat').value = '';
       guncelleAlt();
       $('#fAlt').value = '';
     } else {
-      $('#srMin').value = '';
       $('#fKat').value = 'Kurgu Dışı';
       guncelleAlt();
       $('#fAlt').value = 'Psikoloji Kitapları';
@@ -870,21 +1084,33 @@ $('#hizliKat').addEventListener('click', e => {
     return;
   }
   if (b.dataset.ozel === 'sesli') {
-    if ($('#srMin').value === '0.05') {
-      $('#srMin').value = '';
-    } else {
+    durum.sadeceFavori = false;
+    durum.sadeceStorytel = !durum.sadeceStorytel;
+    if (durum.sadeceStorytel) {
       $('#fKat').value = '';
       guncelleAlt();
       $('#fAlt').value = '';
       durum.etiketler.delete('Akademik');
-      $('#srMin').value = '0.05';
     }
     if (durum.sekme !== 'kitaplar') sekmeDegistir('kitaplar');
     else ciz();
     return;
   }
+  if (b.dataset.ozel === 'fav') {
+    durum.sadeceStorytel = false;
+    durum.sadeceFavori = !durum.sadeceFavori;
+    if (durum.sadeceFavori) {
+      $('#fKat').value = '';
+      guncelleAlt();
+      $('#fAlt').value = '';
+    }
+    if (durum.sekme !== 'kitaplar') sekmeDegistir('kitaplar');
+    else ciz();
+    return;
+  }
+  durum.sadeceStorytel = false;
+  durum.sadeceFavori = false;
   durum.etiketler.delete('Akademik');
-  $('#srMin').value = '';
   $('#fKat').value = b.dataset.kat;
   guncelleAlt();
   $('#fAlt').value = '';
@@ -907,7 +1133,28 @@ $('#istatMetrikSec').addEventListener('click', e => {
   ciz();
 });
 
+function kartTiklamaYonet(e) {
+  const favBtn = e.target.closest('[data-fav-id]');
+  if (favBtn) {
+    e.stopPropagation();
+    const id = favBtn.dataset.favId;
+    if (favoriler.has(id)) favoriler.delete(id);
+    else favoriler.add(id);
+    favKaydet();
+    hizliKatGuncelle();
+    ciz();
+    return true;
+  }
+  const k = e.target.closest('.kart');
+  if (k) {
+    modalAc(k.dataset.id);
+    return true;
+  }
+  return false;
+}
+
 $('#sekIstatistik').addEventListener('click', e => {
+  if (kartTiklamaYonet(e)) return;
   const altSekBtn = e.target.closest('[data-ist-sek]');
   if (altSekBtn) {
     durum.istatSekme = altSekBtn.dataset.istSek;
@@ -940,6 +1187,7 @@ $('#sekIstatistik').addEventListener('click', e => {
     return;
   }
   if (e.target.id === 'akTumunuKitapliktaGor') {
+    durum.sadeceStorytel = false;
     $('#fKat').value = 'Kurgu Dışı';
     guncelleAlt();
     $('#fAlt').value = 'Psikoloji Kitapları';
@@ -947,9 +1195,6 @@ $('#sekIstatistik').addEventListener('click', e => {
     return;
   }
   if (e.target.id === 'istatKitaplariGor') { sekmeDegistir('kitaplar'); return; }
-
-  const kartEl = e.target.closest('.kart');
-  if (kartEl) { modalAc(kartEl.dataset.id); return; }
 
   const akCb = e.target.closest('[data-ak-tur]');
   if (akCb) {
@@ -1011,7 +1256,7 @@ $('#etiketBulut').addEventListener('click', e => {
   ciz();
 });
 
-$('#liste').addEventListener('click', e => { const k = e.target.closest('.kart'); if (k) modalAc(k.dataset.id); });
+$('#liste').addEventListener('click', e => { kartTiklamaYonet(e); });
 $('#kapat').onclick = modalKapat;
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') modalKapat(); });
 
@@ -1032,6 +1277,48 @@ $('#modalIcerik').addEventListener('click', e => {
   if (b) {
     $('#mk').src = 'kapaklar/' + b.dataset.k;
     b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('aktif', x === b));
+    return;
+  }
+  const mFav = e.target.closest('#modalFavBtn');
+  if (mFav) {
+    const id = mFav.dataset.isbn;
+    if (favoriler.has(id)) favoriler.delete(id);
+    else favoriler.add(id);
+    favKaydet();
+    hizliKatGuncelle();
+    modalAc(id);
+    ciz();
+    return;
+  }
+  const mApa = e.target.closest('#modalApaKopyalaBtn');
+  if (mApa) {
+    const k = K.find(x => x.isbn === mApa.dataset.isbn);
+    if (k && navigator.clipboard) {
+      navigator.clipboard.writeText(apaKaynakcaMetni(k));
+      mApa.textContent = '✓ APA Kaynakça Kopyalandı!';
+      setTimeout(() => { mApa.textContent = '📋 APA Kaynakça Kopyala'; }, 2000);
+    }
+    return;
+  }
+  const notBtn = e.target.closest('#notKaydetBtn');
+  if (notBtn) {
+    const id = notBtn.dataset.isbn;
+    const alan = $('#kisiselNotAlan');
+    if (alan) {
+      notKaydet(id, alan.value);
+      hizliKatGuncelle();
+      const bilgi = $('#notDurumBilgi');
+      if (bilgi) bilgi.textContent = alan.value.trim() ? '✓ Not kaydedildi!' : 'Not silindi';
+      ciz();
+    }
+    return;
+  }
+  const bnz = e.target.closest('[data-benzer-id]');
+  if (bnz) {
+    modalAc(bnz.dataset.benzerId);
+    const govde = $('#modalIcerik');
+    if (govde) govde.scrollTop = 0;
+    return;
   }
   const t = e.target.closest('[data-modal-e]');
   if (t) { durum.etiketler.add(t.dataset.modalE); modalKapat(); if (durum.sekme !== 'kitaplar') sekmeDegistir('kitaplar'); else ciz(); }
@@ -1040,6 +1327,8 @@ $('#modalIcerik').addEventListener('click', e => {
 $('#temizle').onclick = () => {
   document.querySelectorAll('#filtreler input, #filtreler select').forEach(x => { if (x.id !== 'sirala') x.value = ''; });
   $('#ara').value = '';
+  durum.sadeceStorytel = false;
+  durum.sadeceFavori = false;
   durum.etiketler.clear();
   guncelleAlt();
   ciz();

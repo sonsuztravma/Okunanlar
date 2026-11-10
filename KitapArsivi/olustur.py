@@ -74,6 +74,29 @@ def etiketle(baslik, ozet):
     return sorted(liste, key=lambda e: -sonuc[e])[:6]
 
 
+YAZAR_HARITA = {
+    'dr. nancy l. segal': 'Nancy L. Segal',
+    'gabor mate': 'Gabor Maté',
+    'byung chul han': 'Byung-Chul Han',
+    'judith lewis herman': 'Judith Herman',
+    'thomaz s. szasz': 'Thomas Szasz',
+    'vedat türkalı': 'Vedat Türkali',
+    'alessandra pinntelli': 'Alessandra Piontelli',
+    'chirsopher kerr': 'Christopher Kerr',
+    'hilarypstein': 'Hilary Howell',
+    'jean-claude carriere, umberto eco': 'Umberto Eco, Jean-Claude Carrière',
+}
+
+
+def yazar_duzelt(y):
+    if not y:
+        return ''
+    t = re.sub(r'^(?:Dr\.|Prof\.|Doç\.|Uzm\.)\s+', '', y.strip(), flags=re.I)
+    t = re.sub(r',?\s*(?:M\.?D\.?|Ph\.?D\.?|Psy\.?D\.?|LCSW|LMFT|MA|MSW)$', '', t.strip(), flags=re.I)
+    anahtar = t.replace('İ', 'i').replace('I', 'ı').lower().strip()
+    return YAZAR_HARITA.get(anahtar, t.strip())
+
+
 def yil(t):
     m = re.search(r'(\d{4})', t or '')
     return int(m.group(1)) if m else None
@@ -110,13 +133,16 @@ def donustur(k):
     elif sure_sn > 12 * 3600: etk.append('Uzun Dinleme')
 
     # Akademik etiket kontrolü: Psikoloji/Travma listelerinden gelen tüm kitaplar Akademik koleksiyondadır
-    psk_flag = bool(k.get('psk_kitap'))
+    psk_flag = bool(k.get('psk_kitap') or str(k.get('isbn', '')).startswith('PSK_'))
     akademik_flag = bool(k.get('akademik') or psk_flag)
     if akademik_flag and 'Akademik' not in etk:
         etk.insert(0, 'Akademik')
 
     if k.get('dil') == 'en' and 'Yabancı Dil (Çeviri Özet)' not in etk:
         etk.append('Yabancı Dil (Çeviri Özet)')
+
+    isbn_str = str(k.get('isbn') or '')
+    storytel_mi = bool(isbn_str.isdigit() and not psk_flag)
 
     seri = None
     if kitap.get('series'):
@@ -127,10 +153,11 @@ def donustur(k):
     sesli_t = ab.get('releaseDateFormat')
     baslangic = k.get('baslangic') or ''
     din_yili = int(baslangic[:4]) if len(baslangic) >= 4 and baslangic[:4].isdigit() else None
+    ham_yazar = kitap.get('authorsAsString') or k.get('yazar_belirtilen') or ''
     return dict(
         isbn=k['isbn'], baslik=baslik,
         orijinal_baslik=k.get('orijinal_baslik') or '',
-        yazar=kitap.get('authorsAsString') or k.get('yazar_belirtilen') or '',
+        yazar=yazar_duzelt(ham_yazar),
         anlatici=ab.get('narratorAsString') or '',
         ceviren=kitap.get('translatorsAsString') or '', sesli_yayinci=(ab.get('publisher') or {}).get('name') or '',
         yayinevi=ky.get('yayinevi') or '', basili_isbn=ky.get('basili_isbn') or '',
@@ -138,11 +165,12 @@ def donustur(k):
         sayfa=sayfa, sayfa_tahmini=tahmini, sure_sn=sure_sn, ilerleme=k.get('ilerleme', 100),
         baslangic=baslangic, son_dinleme=k.get('son_dinleme') or '', dinleme_yili=din_yili,
         kategori=ana, alt_kategori=alt, etiketler=etk, seri=seri,
-        akademik=akademik_flag, psk_kitap=psk_flag, sesli_kitap=bool(sure_sn > 0 or not psk_flag),
+        akademik=akademik_flag, psk_kitap=psk_flag,
+        storytel_kitap=storytel_mi, sesli_kitap=storytel_mi,
         dil=k.get('dil') or 'tr',
         puan=kitap.get('grade') or None, puan_sayisi=kitap.get('nrGrade') or 0,
         ozet=ozet, tanitim=tanitim, kapak_sesli=k.get('kapak_sesli'), kapak_basili=k.get('kapak_basili'),
-        kaynak_storytel=bool(st), kaynak_kitapyurdu=ky.get('url') or '')
+        kaynak_storytel=storytel_mi, kaynak_kitapyurdu=ky.get('url') or '')
 
 
 def veritabani(liste):

@@ -1575,3 +1575,341 @@ mark {
 .ak-katalog-araclar input {
   min-width: 230px;
 }
+
+
+/* === AÇIK / GÜNDÜZ OKUMA TEMASI ([data-tema="acik"]) === */
+html[data-tema="acik"] {
+  --arka: #f6f4ef;
+  --panel: #ffffff;
+  --panel2: #efece4;
+  --yazi: #1c1917;
+  --yazi-ikincil: #44403c;
+  --soluk: #78716c;
+  --vurgu: #d97706;
+  --vurgu-acik: #b45309;
+  --vurgu-yumusak: rgba(217, 119, 6, 0.14);
+  --kenar: rgba(28, 25, 23, 0.12);
+  --kenar-parlak: rgba(217, 119, 6, 0.45);
+  --golge: 0 10px 30px rgba(28, 25, 23, 0.08);
+}
+
+html[data-tema="acik"] body {
+  background: radial-gradient(circle at 15% 0%, #ede8dc 0%, #f6f4ef 60%);
+}
+
+html[data-tema="acik"] .ust {
+  background: rgba(250, 248, 243, 0.92);
+  border-bottom: 1px solid var(--kenar);
+}
+
+html[data-tema="acik"] .hizli-kat-bar {
+  background: rgba(240, 236, 226, 0.85);
+  border-top: 1px solid var(--kenar);
+}
+
+html[data-tema="acik"] .sekmeler {
+  background: #e7e2d8;
+}
+
+html[data-tema="acik"] .metin-kutu {
+  background: #faf8f4;
+}
+
+html[data-tema="acik"] .alt-baslik-ceviri {
+  color: #5b21b6;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+html[data-tema="acik"] .kat-cip.ozel-psk {
+  color: #5b21b6;
+  background: rgba(139, 92, 246, 0.12);
+}
+
+html[data-tema="acik"] .kat-cip.ozel-ak {
+  color: #065f46;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.tema-btn {
+  background: var(--panel2);
+  color: var(--yazi);
+  border: 1px solid var(--kenar);
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s;
+}
+
+.tema-btn:hover {
+  border-color: var(--vurgu);
+  color: var(--vurgu-acik);
+}
+
+/* Dışa Aktarma Butonları */
+.disa-aktar-grup {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.arac-btn {
+  background: var(--panel);
+  color: var(--yazi-ikincil);
+  border: 1px solid var(--kenar);
+  padding: 7px 11px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.arac-btn:hover {
+  border-color: var(--vurgu);
+  color: var(--vurgu-acik);
+  background: var(--panel2);
+}
+
+/* Favori & Notlar Rozetleri */
+.kat-cip.ozel-fav {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--vurgu-acik);
+}
+
+.kat-cip.ozel-fav.aktif {
+  background: var(--vurgu);
+  color: #0c0e16;
+}
+
+.kart-fav-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 14, 22, 0.75);
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+.kart-fav-btn:hover,
+.kart-fav-btn.aktif {
+  color: #fbbf24;
+  border-color: #fbbf24;
+  background: rgba(12, 14, 22, 0.92);
+  transform: scale(1.08);
+}
+
+.not-etiket {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--vurgu-acik);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  margin-left: 4px;
+}
+
+/* Tipografik Kitap Kapağı (Görseli Olmayan Kitaplar İçin Özel Tasarım) */
+.tipografik-kapak {
+  width: 100%;
+  height: 100%;
+  min-height: 215px;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: center;
+  background: linear-gradient(145deg, #1e1b4b 0%, #311042 52%, #0f172a 100%);
+  color: #f8fafc;
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tipografik-kapak::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.tipografik-kapak .tk-ust {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #c4b5fd;
+  font-weight: 700;
+}
+
+.tipografik-kapak .tk-baslik {
+  font-size: 0.88rem;
+  font-weight: 750;
+  line-height: 1.32;
+  color: #ffffff;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 0 4px;
+}
+
+.tipografik-kapak .tk-yazar {
+  font-size: 0.74rem;
+  color: #e2e8f0;
+  font-style: italic;
+  opacity: 0.9;
+}
+
+/* Modal İçi Favori & Kişisel Not Kutusu */
+.modal-aksiyon-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.modal-aksiyon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--kenar);
+  background: var(--panel2);
+  color: var(--yazi);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modal-aksiyon-btn.aktif {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: var(--vurgu);
+  color: var(--vurgu-acik);
+}
+
+.kisisel-not-kutu {
+  background: var(--panel2);
+  border: 1px solid var(--kenar);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+
+.kisisel-not-kutu h3 {
+  font-size: 0.84rem;
+  color: var(--vurgu-acik);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.kisisel-not-kutu textarea {
+  width: 100%;
+  min-height: 74px;
+  background: var(--panel);
+  color: var(--yazi);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.kisisel-not-alt {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.kisisel-not-alt small {
+  color: var(--soluk);
+  font-size: 0.75rem;
+}
+
+/* Benzer Kitaplar Bölümü (Detay Modalı) */
+.benzer-bolum {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--kenar);
+}
+
+.benzer-bolum h3 {
+  font-size: 0.88rem;
+  color: var(--vurgu-acik);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.benzer-izgara {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  gap: 10px;
+}
+
+.benzer-kart {
+  background: var(--panel2);
+  border: 1px solid var(--kenar);
+  border-radius: 10px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.benzer-kart:hover {
+  border-color: var(--vurgu);
+  transform: translateY(-2px);
+}
+
+.benzer-kart img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.benzer-kart b {
+  font-size: 0.76rem;
+  color: var(--yazi);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
+.benzer-kart small {
+  font-size: 0.68rem;
+  color: var(--soluk);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

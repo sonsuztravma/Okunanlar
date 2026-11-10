@@ -6,7 +6,8 @@
 4. GitHub'a Gönderme (Canlıya Alma)
 """
 
-import os, sys, json, csv, time, shutil, subprocess, threading, hashlib
+import os, sys, json, csv, time, shutil, subprocess, threading, hashlib, zipfile, re
+import xml.etree.ElementTree as ET
 from flask import Flask, request, jsonify, render_template_string
 
 KOK_DIZIN = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +16,10 @@ sys.path.insert(0, ARSIV_DIZIN)
 
 import toplayici
 import olustur
+try:
+    import psikoloji_topla
+except Exception:
+    psikoloji_topla = None
 
 app = Flask(__name__)
 
@@ -24,7 +29,7 @@ def log(msg):
     islem_durumu["mesaj"] = msg
     print(f"[*] {msg}", flush=True)
 
-def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kitap_bilgi=None):
+def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kitap_bilgi=None, psk_kitap_listesi=None):
     islem_durumu["calisiyor"] = True
     islem_durumu["son_hata"] = None
     try:
@@ -36,6 +41,32 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
                     mevcut_havuz[k['isbn']] = k
 
         yeni_kitaplar = []
+
+        # 0. Akademik & Psikoloji Kitap Listesi (.docx veya Metin)
+        if psk_kitap_listesi and psikoloji_topla:
+            dil_tipi = psk_kitap_listesi.get('dil', 'en')
+            satirlar = psk_kitap_listesi.get('kitaplar', [])
+            log(f"{len(satirlar)} adet Akademik/Psikoloji kitabı Amazon, Goodreads ve Apple Books üzerinden taranıyor...")
+            for idx, item in enumerate(satirlar, 1):
+                baslik = (item.get('title') or '').strip()
+                yazar = (item.get('author') or '').strip()
+                if not baslik:
+                    continue
+                h_kod = hashlib.md5(f"psk:{baslik.lower()}:{yazar.lower()}".encode('utf8')).hexdigest()[:6].upper()
+                on_ek = "PSK_EN_" if dil_tipi == 'en' else "PSK_TR_"
+                kod = f"{on_ek}{h_kod}"
+                if kod in mevcut_havuz:
+                    continue
+                log(f"[{idx}/{len(satirlar)}] Psikoloji/Akademik taranıyor: {baslik} ({yazar})")
+                try:
+                    if dil_tipi == 'en':
+                        kayit = psikoloji_topla.yabanci_kitap_tara(idx, baslik, yazar)
+                    else:
+                        kayit = psikoloji_topla.turkce_kitap_tara(idx, baslik, yazar)
+                    kayit['isbn'] = kod
+                    mevcut_havuz[kod] = kayit
+                except Exception as e:
+                    log(f"Uyarı ({baslik}): {e}")
 
         # 1. Storytel CSV İçe Aktarma
         if csv_dosya_yolu:
@@ -260,6 +291,63 @@ def eleven_secilenleri_ekle():
     threading.Thread(target=guncelleme_sureci, kwargs={'eleven_secili_kitaplar': kitaplar}).start()
     return jsonify({"mesaj": f"{len(kitaplar)} adet kitap için aktarma süreci başlatıldı."})
 
+@app.route('/docx-coz', methods=['POST'])
+def docx_coz():
+    if 'dosya' not in request.files:
+        return jsonify({"hata": "Dosya seçilmedi."}), 400
+    dosya = request.files['dosya']
+    gecici_yol = os.path.join(KOK_DIZIN, f"gecici_{int(time.time())}.docx")
+    dosya.save(gecici_yol)
+    satirlar = []
+    try:
+        with zipfile.ZipFile(gecici_yol) as z:
+            xml_icerik = z.read('word/document.xml')
+        agac = ET.fromstring(xml_icerik)
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        for p in agac.findall('.//w:p', ns):
+            parcalar = [t.text for t in p.findall('.//w:t', ns) if t.text]
+            tam = ''.join(parcalar).strip()
+            if tam and len(tam) > 3:
+                satirlar.append(tam)
+    except Exception as e:
+        return jsonify({"hata": f"DOCX okunamadı: {e}"}), 400
+    finally:
+        if os.path.exists(gecici_yol):
+            os.remove(gecici_yol)
+    return jsonify({"satirlar": satirlar})
+
+@app.route('/psikoloji-ekle', methods=['POST'])
+def psikoloji_ekle():
+    if islem_durumu["calisiyor"]:
+        return jsonify({"hata": "Şu an başka bir işlem devam ediyor."}), 400
+    veri = request.json or {}
+    metin = (veri.get('metin') or '').strip()
+    dil = veri.get('dil', 'en')
+    if not metin:
+        return jsonify({"hata": "Lütfen eklenecek kitap listesini girin veya .docx yükleyin."}), 400
+
+    kitaplar = []
+    for raw in metin.splitlines():
+        s = re.sub(r'^\s*\d+[\.\)\-\s]+', '', raw.strip()).strip()
+        if not s or len(s) < 3:
+            continue
+        baslik, yazar = s, ""
+        for ayirac in [' – ', ' — ', ' - ']:
+            if ayirac in s:
+                parca = s.rsplit(ayirac, 1)
+                baslik, yazar = parca[0].strip(), parca[1].strip()
+                break
+        kitaplar.append({'title': baslik, 'author': yazar})
+
+    if not kitaplar:
+        return jsonify({"hata": "Geçerli kitap satırı bulunamadı."}), 400
+
+    threading.Thread(
+        target=guncelleme_sureci,
+        kwargs={'psk_kitap_listesi': {'dil': dil, 'kitaplar': kitaplar}}
+    ).start()
+    return jsonify({"mesaj": f"{len(kitaplar)} adet Akademik/Psikoloji kitabı için tarama ve çeviri başlatıldı."})
+
 @app.route('/githuba-gonder', methods=['POST'])
 def githuba_gonder():
     if islem_durumu["calisiyor"]:
@@ -442,6 +530,30 @@ HTML_TEMPLATE = """
       </div>
       <button type="submit">Kitabı Bul ve Arşive Ekle</button>
     </form>
+  </div>
+
+  <!-- BÖLÜM 3.5: Akademik & Psikoloji Kitap Listesi (.docx veya Metin) -->
+  <div class="kart" style="border-color: rgba(16, 185, 129, 0.35);">
+    <h2 style="color: #6ee7b7;">🎓 Akademik & Psikoloji Kitabı Ekle (.docx veya Metin Listesi)</h2>
+    <p>Word (<code>.docx</code>) dosyası yükleyin veya her satıra <code>Kitap Adı - Yazar Adı</code> gelecek şekilde yapıştırın. Amazon, Goodreads ve Apple Books'tan kapak ve tam tanıtım yazıları çekilip otomatik Türkçeye çevrilir.</p>
+    <div class="izgara" style="margin-bottom: 10px;">
+      <div class="form-grup">
+        <label>Word (.docx) Dosyasından Satırları Yükle (İsteğe Bağlı)</label>
+        <input type="file" id="pskDocxDosya" accept=".docx">
+      </div>
+      <div class="form-grup">
+        <label>Kaynak Kitap Dili</label>
+        <select id="pskDil" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--kenar);background:var(--bg);color:var(--yazi);font-size:0.9rem;">
+          <option value="en">İngilizce / Yabancı (Otomatik Türkçe Çevirili)</option>
+          <option value="tr">Türkçe (Kitapyurdu & Goodreads)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grup">
+      <label>Kitap Listesi (Her satıra: Kitap Adı - Yazar Adı)</label>
+      <textarea id="pskMetin" rows="6" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--kenar);background:var(--bg);color:var(--yazi);font-size:0.86rem;resize:vertical;" placeholder="Örn:&#10;The Body Keeps the Score - Bessel van der Kolk&#10;Trauma and Recovery - Judith Herman"></textarea>
+    </div>
+    <button type="button" class="yesil" onclick="psikolojiListesiEkle()">Psikoloji & Akademik Kitapları Tara ve Ekle</button>
   </div>
 
   <!-- BÖLÜM 4: GitHub'a Gönderme -->
@@ -669,6 +781,38 @@ document.getElementById('tekKitapForm').onsubmit = async (e) => {
   const data = await res.json();
   if (data.hata) alert(data.hata);
 };
+
+// Word (.docx) yüklenince satırları metin kutusuna aktar
+document.getElementById('pskDocxDosya').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('dosya', file);
+  const res = await fetch('/docx-coz', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.hata) {
+    alert(data.hata);
+  } else if (data.satirlar) {
+    document.getElementById('pskMetin').value = data.satirlar.join('\n');
+  }
+};
+
+async function psikolojiListesiEkle() {
+  const metin = document.getElementById('pskMetin').value.trim();
+  const dil = document.getElementById('pskDil').value;
+  if (!metin) {
+    alert("Lütfen eklenecek kitap listesini girin veya bir .docx dosyası seçin.");
+    return;
+  }
+  surecBaslat();
+  const res = await fetch('/psikoloji-ekle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metin, dil })
+  });
+  const data = await res.json();
+  if (data.hata) alert(data.hata);
+}
 
 async function githubaGonder() {
   if (!confirm("Değişiklikler GitHub'a gönderilsin mi?")) return;
