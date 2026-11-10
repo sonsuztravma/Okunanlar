@@ -8,7 +8,7 @@
 
 import os, sys, json, csv, time, shutil, subprocess, threading, hashlib, zipfile, re
 import xml.etree.ElementTree as ET
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, send_from_directory
 
 KOK_DIZIN = os.path.dirname(os.path.abspath(__file__))
 ARSIV_DIZIN = os.path.join(KOK_DIZIN, 'KitapArsivi')
@@ -217,6 +217,14 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
     finally:
         islem_durumu["calisiyor"] = False
 
+@app.route('/logo.png')
+def logo_dosya():
+    return send_from_directory(KOK_DIZIN, 'logo.png')
+
+@app.route('/favicon.png')
+def favicon_dosya():
+    return send_from_directory(KOK_DIZIN, 'favicon.png')
+
 @app.route('/')
 def index():
     hepsi_yol = os.path.join(toplayici.ONB, 'hepsi.json')
@@ -375,6 +383,7 @@ HTML_TEMPLATE = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sonsuz Okumalar - Kitap Yönetim Paneli</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
   :root {
     --bg: #0c0e16;
@@ -443,9 +452,12 @@ HTML_TEMPLATE = """
 <body>
 <div class="kutu">
   <header>
-    <div>
-      <h1>Sonsuz Okumalar - Kitap Yönetim Paneli</h1>
-      <span style="font-size:0.8rem;color:var(--soluk)">Storytel & ElevenReader Kütüphane Yöneticisi</span>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="/logo.png" alt="Sonsuz Travma Logo" style="width:46px;height:46px;border-radius:11px;object-fit:cover;border:1px solid rgba(245,158,11,0.4);">
+      <div>
+        <h1>Sonsuz Okumalar - Kitap Yönetim Paneli</h1>
+        <span style="font-size:0.8rem;color:var(--soluk)">Storytel, ElevenReader & Akademik Kütüphane Yöneticisi</span>
+      </div>
     </div>
     <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
   </header>
@@ -567,6 +579,9 @@ HTML_TEMPLATE = """
     <a href="index.html" target="_blank">📖 Kütüphaneyi Aç (Yerel)</a> •
     <a href="https://sonsuztravma.github.io/Okunanlar/" target="_blank">🌐 GitHub Pages (Canlı)</a> •
     <a href="https://github.com/sonsuztravma/Okunanlar" target="_blank">💻 GitHub Deposu</a>
+    <div style="margin-top:10px;color:var(--soluk);font-size:0.82rem;">
+      Görüş ve öneriler için iletişim: <a href="mailto:sonsuz.travma@gmail.com">sonsuz.travma@gmail.com</a>
+    </div>
   </div>
 </div>
 
