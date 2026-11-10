@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Sonsuz Okumalar - Kitap Yönetim & Güncelleme Paneli
-1. ElevenReader / Harici JSON Önizleme ve Seçerek Ekleme (Hariç tutma / Tümünü seçme)
+1. ElevenReader / Harici JSON Önizleme, Seçme, Hariç Tutma ve Canlı Başlık/Yazar Düzenleme
 2. Storytel CSV Yükleme
 3. Tek Tek Kitap Ekleme (Ad/Yazar veya ISBN)
 4. GitHub'a Gönderme (Canlıya Alma)
@@ -66,7 +66,7 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
                             'son_dinleme': son
                         })
 
-        # 2. ElevenReader Seçili Kitaplar İçe Aktarma
+        # 2. ElevenReader Seçili ve Düzenlenmiş Kitaplar
         if eleven_secili_kitaplar:
             log(f"{len(eleven_secili_kitaplar)} adet seçilen ElevenReader kitabı işleniyor...")
             for b in eleven_secili_kitaplar:
@@ -116,7 +116,8 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
                 st = toplayici.storytel(yk['isbn']) if yk['isbn'].isdigit() else {}
                 if not st and baslik:
                     try:
-                        s_arama = toplayici.indir('https://www.storytel.com/api/search.action?request_locale=tr&q=' + toplayici.up.quote(f"{baslik} {yazar}".strip()))
+                        sorgu = f"{baslik} {yazar}".strip() if yazar else baslik
+                        s_arama = toplayici.indir('https://www.storytel.com/api/search.action?request_locale=tr&q=' + toplayici.up.quote(sorgu))
                         if s_arama:
                             s_json = json.loads(s_arama)
                             for sb in s_json.get('books', []):
@@ -125,10 +126,11 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
                     except: pass
 
                 st_kitap = st.get('book', {}) if st else {}
-                st_yazar = st_kitap.get('authorsAsString') or yazar
-                st_baslik = st_kitap.get('name') or baslik
+                # Eğer kullanıcı kendi yazarını girdiyse veya düzelttiyse öncelik ver
+                nihai_yazar = yazar or st_kitap.get('authorsAsString') or ''
+                nihai_baslik = baslik or st_kitap.get('name') or ''
 
-                ky = toplayici.kitapyurdu(yk['isbn'], st_baslik, st_yazar)
+                ky = toplayici.kitapyurdu(yk['isbn'], nihai_baslik, nihai_yazar)
 
                 kap_s = None
                 if st_kitap.get('largeCover'):
@@ -137,6 +139,14 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
                     kap_s = toplayici.kapak_indir(yk['isbn'], '_e', yk['kapak_url'])
 
                 kap_b = toplayici.kapak_indir(yk['isbn'], '_b', ky.get('kapak')) if ky else None
+
+                # Kitap objesini birleştirirken elle girilen yazar/başlığı koru
+                if not st_kitap:
+                    st_kitap = {'name': nihai_baslik, 'authorsAsString': nihai_yazar}
+                    st = {'book': st_kitap, 'abook': {}}
+                else:
+                    if yazar: st_kitap['authorsAsString'] = nihai_yazar
+                    if baslik: st_kitap['name'] = nihai_baslik
 
                 islenmis = dict(yk, storytel=st, kitapyurdu=ky, kapak_sesli=kap_s, kapak_basili=kap_b)
                 mevcut_havuz[yk['isbn']] = islenmis
@@ -293,7 +303,7 @@ HTML_TEMPLATE = """
   }
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   body { background: var(--bg); color: var(--yazi); padding: 24px 16px; min-height: 100vh; }
-  .kutu { max-width: 860px; margin: 0 auto; }
+  .kutu { max-width: 880px; margin: 0 auto; }
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--kenar); }
   h1 { font-size: 1.4rem; color: var(--vurgu); }
   .sayac-kutu { background: var(--panel2); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
@@ -313,21 +323,26 @@ HTML_TEMPLATE = """
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .kod-kutu { background: #08090f; border: 1px solid #232a3e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.78rem; color: #a5b4fc; word-break: break-all; margin-bottom: 14px; user-select: all; }
   
-  /* Seçim Tablosu ve Listesi Stilleri */
-  .onizleme-kapsul { margin-top: 16px; border: 1px solid var(--kenar); border-radius: 12px; background: rgba(12, 14, 22, 0.6); padding: 14px; display: none; }
-  .onizleme-ust { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+  /* Seçim & Düzenleme Listesi Stilleri */
+  .onizleme-kapsul { margin-top: 16px; border: 1px solid var(--kenar); border-radius: 12px; background: rgba(12, 14, 22, 0.6); padding: 16px; display: none; }
+  .onizleme-ust { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
   .arama-filtre { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--kenar); background: var(--bg); color: var(--yazi); font-size: 0.85rem; width: 220px; }
   .buton-grubu { display: flex; gap: 6px; }
   .buton-grubu button { width: auto; padding: 6px 12px; margin: 0; font-size: 0.78rem; border-radius: 6px; }
-  .secim-listesi { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; padding-right: 4px; }
-  .secim-satir { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--kenar); transition: border-color 0.15s; }
-  .secim-satir:hover { border-color: rgba(139, 92, 246, 0.4); }
-  .secim-satir input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--mor); cursor: pointer; }
-  .satir-detay { flex: 1; min-width: 0; }
-  .satir-detay strong { display: block; font-size: 0.88rem; color: var(--yazi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .satir-detay small { color: var(--soluk); font-size: 0.76rem; }
+  
+  .secim-listesi { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; padding-right: 4px; }
+  .secim-kart { display: flex; gap: 12px; padding: 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--kenar); align-items: flex-start; transition: border-color 0.15s; }
+  .secim-kart:hover { border-color: rgba(139, 92, 246, 0.45); }
+  .secim-kart input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--mor); cursor: pointer; margin-top: 4px; }
+  
+  .kart-form { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .kart-satir { display: grid; grid-template-columns: 2fr 1.3fr; gap: 8px; }
+  .duzen-girdi { padding: 7px 10px; border-radius: 6px; border: 1px solid var(--kenar); background: rgba(12, 14, 22, 0.8); color: var(--yazi); font-size: 0.85rem; }
+  .duzen-girdi:focus { border-color: var(--mor); outline: none; }
+  .kart-alt-bilgi { display: flex; justify-content: space-between; align-items: center; font-size: 0.74rem; color: var(--soluk); }
+  
   .satir-haric { background: none; border: none; color: var(--soluk); width: auto; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; border-radius: 6px; margin: 0; }
-  .satir-haric:hover { color: var(--kirmizi); background: rgba(239, 68, 68, 0.1); }
+  .satir-haric:hover { color: var(--kirmizi); background: rgba(239, 68, 68, 0.12); }
   
   .durum-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; border: 1px solid var(--vurgu); padding: 12px 24px; border-radius: 999px; font-size: 0.9rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none; z-index: 100; }
   .durum-bar.aktif { display: flex; align-items: center; gap: 10px; }
@@ -347,10 +362,10 @@ HTML_TEMPLATE = """
     <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
   </header>
 
-  <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme ve Seçme -->
+  <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme, Düzenleme ve Seçme -->
   <div class="kart vurgulu-mor">
     <h2 style="color: #c4b5fd;">🎧 ElevenReader / Harici Kitap Ekle (.json)</h2>
-    <p>ElevenReader'dan indirdiğiniz <code>elevenreader_kitaplar.json</code> dosyasını yükleyin. Kitap olmayan belgeleri <strong>kolayca hariç tutabilir</strong> veya <strong>sadece istediklerinizi seçerek</strong> arşive aktarabilirsiniz.</p>
+    <p>ElevenReader'dan indirdiğiniz <code>elevenreader_kitaplar.json</code> dosyasını seçin. Kitap adı ve yazarları <strong>kutucuklardan anında düzenleyebilir</strong>, istemediğiniz dosyaları hariç tutabilirsiniz:</p>
     
     <details style="margin-bottom: 14px; font-size: 0.82rem; color: var(--soluk);">
       <summary style="cursor: pointer; color: #a78bfa; font-weight: 600; margin-bottom: 8px;">Tarayıcı Konsol Kodunu Göster (Henüz indirmediyseniz)</summary>
@@ -360,11 +375,11 @@ HTML_TEMPLATE = """
     </details>
 
     <div class="form-grup">
-      <label>1. Adım: JSON Dosyasını Seçin (Önizleme Açılacaktır):</label>
+      <label>1. Adım: JSON Dosyasını Seçin:</label>
       <input type="file" id="elevenDosyaGirdi" accept=".json">
     </div>
 
-    <!-- Kitap Seçim & Hariç Tutma Listesi -->
+    <!-- Kitap Seçim, Canlı Düzenleme & Hariç Tutma Listesi -->
     <div id="onizlemeKapsul" class="onizleme-kapsul">
       <div class="onizleme-ust">
         <div>
@@ -376,6 +391,10 @@ HTML_TEMPLATE = """
           <button type="button" class="gri" onclick="hepsiniSec(true)">Tümünü Seç</button>
           <button type="button" class="gri" onclick="hepsiniSec(false)">Hiçbiri</button>
         </div>
+      </div>
+
+      <div style="font-size: 0.76rem; color: var(--soluk); margin-bottom: 8px;">
+        💡 İpucu: Kitap adında yazar yazıyorsa ayırabilir, yazar belirtilmeyenlere yazar ekleyebilirsiniz. Bilgiler Storytel ve Kitapyurdu'nda aratılırken güncel hali kullanılacaktır.
       </div>
 
       <div id="secimListesi" class="secim-listesi"></div>
@@ -478,7 +497,7 @@ function surecBaslat() {
   }
 }
 
-// ElevenReader Dosya Seçildiğinde JSON Önizleme ve Seçim Arayüzü
+// Dosya seçildiğinde listeyi doldur
 document.getElementById('elevenDosyaGirdi').onchange = (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -487,15 +506,30 @@ document.getElementById('elevenDosyaGirdi').onchange = (e) => {
     try {
       const data = JSON.parse(event.target.result);
       const list = Array.isArray(data) ? data : (data.books || []);
-      yuklenenElevenKitaplar = list.map((item, idx) => ({
-        id: idx,
-        title: item.title || item.baslik || "İsimsiz Belge",
-        author: item.author || item.yazar || "",
-        duration_seconds: item.duration_seconds || item.sure_sn || 0,
-        cover_url: item.cover_url || item.kapak || "",
-        secili: true,
-        silindi: false
-      }));
+      yuklenenElevenKitaplar = list.map((item, idx) => {
+        let t = (item.title || item.baslik || "").trim();
+        let a = (item.author || item.yazar || "").trim();
+
+        // Eğer başlık içinde tire veya iki nokta ile yazar ayrılmışsa otomatik ayıkla
+        // Örn: "Dune - Frank Herbert" veya "Frank Herbert: Dune"
+        if (!a && t.includes(" - ")) {
+          const parts = t.split(" - ");
+          if (parts.length === 2) {
+            t = parts[0].trim();
+            a = parts[1].trim();
+          }
+        }
+
+        return {
+          id: idx,
+          title: t,
+          author: a,
+          duration_seconds: item.duration_seconds || item.sure_sn || 0,
+          cover_url: item.cover_url || item.kapak || "",
+          secili: true,
+          silindi: false
+        };
+      });
 
       document.getElementById('onizlemeKapsul').style.display = 'block';
       secimListesiCiz();
@@ -522,17 +556,22 @@ function secimListesiCiz() {
     const aramaMetin = (k.title + " " + k.author).toLowerCase();
     if (filtre && !aramaMetin.includes(filtre)) return;
 
-    const sureDk = k.duration_seconds ? Math.round(k.duration_seconds / 60) + " dk" : "";
+    const sureDk = k.duration_seconds ? Math.round(k.duration_seconds / 60) + " dk dinleme" : "";
 
     const div = document.createElement('div');
-    div.className = 'secim-satir';
+    div.className = 'secim-kart';
     div.innerHTML = `
-      <input type="checkbox" ${k.secili ? 'checked' : ''} onchange="secimDegistir(${k.id}, this.checked)">
-      <div class="satir-detay">
-        <strong>${k.title}</strong>
-        <small>${k.author || 'Yazar belirtilmemiş'} ${sureDk ? '• ' + sureDk : ''}</small>
+      <input type="checkbox" ${k.secili ? 'checked' : ''} onchange="secimDegistir(${k.id}, this.checked)" title="Aktarmak için seç">
+      <div class="kart-form">
+        <div class="kart-satir">
+          <input type="text" class="duzen-girdi" value="${k.title.replace(/"/g, '&quot;')}" oninput="baslikGuncelle(${k.id}, this.value)" placeholder="Kitap Adı">
+          <input type="text" class="duzen-girdi" value="${k.author.replace(/"/g, '&quot;')}" oninput="yazarGuncelle(${k.id}, this.value)" placeholder="Yazar Adı (İsteğe bağlı)">
+        </div>
+        <div class="kart-alt-bilgi">
+          <span>${sureDk || 'Süre belirtilmemiş'}</span>
+          <button type="button" class="satir-haric" onclick="haricTut(${k.id})">Listeden Hariç Tut ✕</button>
+        </div>
       </div>
-      <button type="button" class="satir-haric" onclick="haricTut(${k.id})" title="Listeden tamamen kaldır">Hariç Tut ✕</button>
     `;
     container.appendChild(div);
   });
@@ -543,10 +582,23 @@ function secimListesiCiz() {
   document.getElementById('secilenleriEkleBtn').disabled = seciliSayisi === 0;
 }
 
+function baslikGuncelle(id, val) {
+  const k = yuklenenElevenKitaplar.find(x => x.id === id);
+  if (k) k.title = val.trim();
+}
+
+function yazarGuncelle(id, val) {
+  const k = yuklenenElevenKitaplar.find(x => x.id === id);
+  if (k) k.author = val.trim();
+}
+
 function secimDegistir(id, val) {
   const k = yuklenenElevenKitaplar.find(x => x.id === id);
   if (k) k.secili = val;
-  secimListesiCiz();
+  const seciliSayisi = yuklenenElevenKitaplar.filter(x => x.secili && !x.silindi).length;
+  document.getElementById('secimBilgi').textContent = `${seciliSayisi} kitap seçildi`;
+  document.getElementById('secilenleriEkleBtn').textContent = `${seciliSayisi} Seçilen Kitabı Arşive Aktar`;
+  document.getElementById('secilenleriEkleBtn').disabled = seciliSayisi === 0;
 }
 
 function haricTut(id) {
