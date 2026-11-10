@@ -171,36 +171,112 @@ def akademik_mi(baslik, yazar, yayinevi, ozet_en, ozet_tr):
     return sayac >= 2
 
 
+gr_semafor = threading.Semaphore(3)
+apple_kilit = threading.Lock()
+
+
+def yarim_mi(metin):
+    if not metin:
+        return True
+    m = metin.strip()
+    if len(m) < 230:
+        return True
+    if m.endswith('…') or m.endswith('...'):
+        return True
+    if 'A specialized psychology and trauma book.' in m:
+        return True
+    return False
+
+
+def goodreads_tam_detay(book_id):
+    """Goodreads book/show/{book_id} sayfasındaki __NEXT_DATA__ apolloState içinden
+    kesintisiz tam açıklamayı, yayınevini, yayın yılını ve ISBN bilgisini çeker."""
+    if not book_id:
+        return {}
+    url = f"https://www.goodreads.com/book/show/{book_id}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8'
+    }
+    with gr_semafor:
+        for deneme in range(3):
+            try:
+                time.sleep(0.25 * (deneme + 1))
+                with ur.urlopen(ur.Request(url, headers=headers), timeout=15) as r:
+                    body = r.read().decode('utf8', 'ignore')
+                m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', body, re.S)
+                if not m:
+                    continue
+                nd = json.loads(m.group(1))
+                apollo = (nd.get('props') or {}).get('pageProps', {}).get('apolloState') or {}
+                for k, v in apollo.items():
+                    if k.startswith('Book:') and isinstance(v, dict) and (v.get('description') or v.get('details')):
+                        desc_raw = v.get('description') or ''
+                        desc_clean = html.unescape(re.sub(r'<br\s*/?>|</p>', '\n', desc_raw))
+                        desc_clean = re.sub(r'<[^>]+>', '', desc_clean).strip()
+                        det = v.get('details') or {}
+                        pub = det.get('publisher') or ''
+                        isbn = det.get('isbn13') or det.get('isbn') or det.get('asin') or ''
+                        pages = det.get('numPages')
+                        pub_year = None
+                        pt = det.get('publicationTime')
+                        if isinstance(pt, (int, float)) and pt > 0:
+                            try:
+                                import datetime
+                                pub_year = datetime.datetime.fromtimestamp(pt / 1000.0, tz=datetime.timezone.utc).year
+                            except Exception:
+                                pass
+                        return {
+                            'ozet': desc_clean,
+                            'yayinevi': pub,
+                            'basili_isbn': isbn,
+                            'sayfa': int(pages) if pages else None,
+                            'yayin_yili': pub_year
+                        }
+            except Exception:
+                time.sleep(0.6 * (deneme + 1))
+    return {}
+
+
 def yabanci_kitap_tara(isbn_id, baslik, yazar):
     onb_yol = os.path.join(PSK_ONB, f"{isbn_id}.json")
+    eski = {}
     if os.path.exists(onb_yol):
-        with open(onb_yol, encoding='utf8') as f:
-            return json.load(f)
+        try:
+            with open(onb_yol, encoding='utf8') as f:
+                eski = json.load(f)
+            if not yarim_mi(eski.get('ozet_orijinal')) and not yarim_mi(eski.get('ozet_tr')) and eski.get('kapak_url'):
+                return eski
+        except Exception:
+            eski = {}
 
     # Parantez içindeki Türkçe çeviriyi arama sorgusundan çıkar
     temiz_baslik = re.sub(r'\s*\([^)]*\)', '', baslik).strip()
     temiz_baslik = re.sub(r'^TR\s+', '', temiz_baslik).strip()
-    ana_baslik = temiz_baslik.split(':')[0].strip()
-    kisa_baslik = ' '.join(ana_baslik.split()[:7])
-    temiz_yazar = re.sub(r'^Dr\.\s*', '', yazar).split('&')[0].strip()
+    ana_baslik = temiz_baslik.split(':')[0].split(' - ')[0].strip()
+    kisa_baslik = ' '.join(ana_baslik.split()[:6])
+    dort_kelime = ' '.join(ana_baslik.split()[:4])
+    temiz_yazar = re.sub(r'^Dr\.\s*', '', yazar).split('&')[0].split(',')[0].strip()
+    yazar_soyad = temiz_yazar.split()[-1] if temiz_yazar else ''
 
     sonuc = {
         'baslik_tam': baslik,
-        'yazar': yazar,
-        'sayfa': None,
-        'yayin_yili': None,
-        'yayinevi': '',
-        'basili_isbn': '',
-        'puan': None,
-        'puan_sayisi': 0,
-        'kapak_url': '',
-        'ozet_orijinal': '',
+        'yazar': eski.get('yazar') or yazar,
+        'sayfa': eski.get('sayfa'),
+        'yayin_yili': eski.get('yayin_yili'),
+        'yayinevi': eski.get('yayinevi') or '',
+        'basili_isbn': eski.get('basili_isbn') or '',
+        'puan': eski.get('puan'),
+        'puan_sayisi': eski.get('puan_sayisi') or 0,
+        'kapak_url': eski.get('kapak_url') or '',
+        'ozet_orijinal': '' if yarim_mi(eski.get('ozet_orijinal')) else eski.get('ozet_orijinal'),
         'ozet_tr': '',
-        'baslik_tr': ''
+        'baslik_tr': eski.get('baslik_tr') or ''
     }
 
-    # 1. Goodreads AutoComplete JSON API
-    for q_str in [f"{kisa_baslik} {temiz_yazar}".strip(), kisa_baslik, temiz_baslik[:50]]:
+    # 1. Goodreads AutoComplete + Goodreads Tam Sayfa (__NEXT_DATA__ apolloState)
+    gr_book_id = None
+    for q_str in dict.fromkeys([f"{kisa_baslik} {temiz_yazar}".strip(), f"{dort_kelime} {yazar_soyad}".strip(), kisa_baslik, temiz_baslik[:50]]):
         if not q_str:
             continue
         gr_liste = get_json("https://www.goodreads.com/book/auto_complete?format=json&q=" + up.quote(q_str)) or []
@@ -212,16 +288,17 @@ def yabanci_kitap_tara(isbn_id, baslik, yazar):
                 ts = difflib.SequenceMatcher(None, toplayici.norm(kisa_baslik), toplayici.norm(it_title[:len(kisa_baslik)+10])).ratio()
                 ys = difflib.SequenceMatcher(None, toplayici.norm(temiz_yazar), toplayici.norm(it_author)).ratio() if temiz_yazar else 0.5
                 skor = ts * 1.2 + ys
-                if skor > en_skor and (ts >= 0.45 or ys >= 0.75):
+                if skor > en_skor and (ts >= 0.42 or ys >= 0.72):
                     en_iyi, en_skor = item, skor
             if not en_iyi and gr_liste:
                 en_iyi = gr_liste[0]
             if en_iyi:
+                gr_book_id = en_iyi.get('bookId')
                 if not sonuc['yazar'] and (en_iyi.get('author') or {}).get('name'):
                     sonuc['yazar'] = en_iyi['author']['name']
-                if en_iyi.get('numPages'):
+                if en_iyi.get('numPages') and not sonuc['sayfa']:
                     sonuc['sayfa'] = int(en_iyi['numPages'])
-                if en_iyi.get('avgRating'):
+                if en_iyi.get('avgRating') and not sonuc['puan']:
                     try:
                         p = float(en_iyi['avgRating'])
                         if p > 0:
@@ -230,88 +307,137 @@ def yabanci_kitap_tara(isbn_id, baslik, yazar):
                     except Exception:
                         pass
                 img = en_iyi.get('imageUrl') or ''
-                if img and 'nophoto' not in img:
+                if img and 'nophoto' not in img and not sonuc['kapak_url']:
                     sonuc['kapak_url'] = re.sub(r'\._S[XY]\d+_\.', '.', img)
-                desc_html = (en_iyi.get('description') or {}).get('html') or ''
-                if desc_html:
+                desc_obj = en_iyi.get('description') or {}
+                desc_html = desc_obj.get('html') or ''
+                if desc_html and not desc_obj.get('truncated') and not sonuc['ozet_orijinal']:
                     sonuc['ozet_orijinal'] = html.unescape(re.sub(r'<[^>]+>', ' ', desc_html)).strip()
                 break
 
-    # 2. Apple Books (iTunes) API - Tam uzun tanıtım yazısı ve yüksek çözünürlüklü kapak için
-    for q_str in [f"{kisa_baslik} {temiz_yazar}".strip(), kisa_baslik]:
-        if not q_str:
-            continue
-        it_data = get_json(f"https://itunes.apple.com/search?term={up.quote(q_str)}&media=ebook&limit=5") or {}
-        it_results = it_data.get('results') or []
-        for item in it_results:
-            it_title = item.get('trackName') or ''
-            it_author = item.get('artistName') or ''
-            ts = difflib.SequenceMatcher(None, toplayici.norm(kisa_baslik), toplayici.norm(it_title[:len(kisa_baslik)+10])).ratio()
-            ys = difflib.SequenceMatcher(None, toplayici.norm(temiz_yazar), toplayici.norm(it_author)).ratio() if temiz_yazar else 0.6
-            if ts >= 0.5 or (ts >= 0.35 and ys >= 0.7):
-                desc = item.get('description') or ''
-                desc_clean = html.unescape(re.sub(r'<br\s*/?>|</p>', '\n', desc))
-                desc_clean = re.sub(r'<[^>]+>', '', desc_clean).strip()
-                if len(desc_clean) > len(sonuc['ozet_orijinal']):
-                    sonuc['ozet_orijinal'] = desc_clean
-                art = item.get('artworkUrl100') or ''
-                if art and not sonuc['kapak_url']:
-                    sonuc['kapak_url'] = art.replace('100x100bb', '600x600bb')
-                rel = (item.get('releaseDate') or '')[:4]
-                if rel.isdigit() and not sonuc['yayin_yili']:
-                    sonuc['yayin_yili'] = int(rel)
-                m_isbn = re.search(r'(97[89]\d{10})', art)
-                if m_isbn and not sonuc['basili_isbn']:
-                    sonuc['basili_isbn'] = m_isbn.group(1)
-                break
-        if len(sonuc['ozet_orijinal']) > 350:
-            break
+    # Goodreads tam sayfa detayını çek (kesintisiz tam açıklama + yayınevi + yıl + ISBN)
+    if gr_book_id and (yarim_mi(sonuc['ozet_orijinal']) or not sonuc['yayinevi'] or not sonuc['yayin_yili']):
+        tam = goodreads_tam_detay(gr_book_id)
+        if tam.get('ozet') and len(tam['ozet']) > len(sonuc['ozet_orijinal'] or ''):
+            sonuc['ozet_orijinal'] = tam['ozet']
+        if tam.get('yayinevi') and not sonuc['yayinevi']:
+            sonuc['yayinevi'] = tam['yayinevi']
+        if tam.get('basili_isbn') and not sonuc['basili_isbn']:
+            sonuc['basili_isbn'] = tam['basili_isbn']
+        if tam.get('sayfa') and not sonuc['sayfa']:
+            sonuc['sayfa'] = tam['sayfa']
+        if tam.get('yayin_yili') and not sonuc['yayin_yili']:
+            sonuc['yayin_yili'] = tam['yayin_yili']
 
-    # 3. OpenLibrary Search API - Yayınevi, Yayın Yılı, ISBN ve eksikse Sayfa Sayısı için
-    ol_q = up.quote(f"{kisa_baslik} {temiz_yazar}".strip())
-    ol_data = get_json(f"https://openlibrary.org/search.json?q={ol_q}&limit=3&fields=key,title,author_name,first_publish_year,number_of_pages_median,publisher,isbn,cover_i") or {}
-    ol_docs = ol_data.get('docs') or []
-    if ol_docs:
-        d0 = ol_docs[0]
-        if not sonuc['yayin_yili'] and d0.get('first_publish_year'):
-            sonuc['yayin_yili'] = int(d0['first_publish_year'])
-        if not sonuc['sayfa'] and d0.get('number_of_pages_median'):
-            sonuc['sayfa'] = int(d0['number_of_pages_median'])
-        pubs = d0.get('publisher') or []
-        if pubs and not sonuc['yayinevi']:
-            # Akademik yayınevi varsa onu tercih et
-            sec_pub = pubs[0]
-            for p in pubs:
-                if any(ak in p.lower() for ak in AKADEMIK_YAYINEVLERI):
-                    sec_pub = p
+    # 2. Apple Books (iTunes) API - Eğer hala özet kısa/yoksa veya kapak yoksa (rate-limit korumalı)
+    if yarim_mi(sonuc['ozet_orijinal']) or not sonuc['kapak_url']:
+        for q_str in dict.fromkeys([f"{dort_kelime} {yazar_soyad}".strip(), f"{kisa_baslik} {temiz_yazar}".strip(), kisa_baslik]):
+            if not q_str:
+                continue
+            with apple_kilit:
+                time.sleep(0.32)
+                it_data = get_json(f"https://itunes.apple.com/search?term={up.quote(q_str)}&entity=ebook&limit=5") or {}
+            it_results = it_data.get('results') or []
+            for item in it_results:
+                it_title = item.get('trackName') or ''
+                it_author = item.get('artistName') or ''
+                ts = difflib.SequenceMatcher(None, toplayici.norm(dort_kelime), toplayici.norm(it_title[:len(dort_kelime)+12])).ratio()
+                ys = difflib.SequenceMatcher(None, toplayici.norm(temiz_yazar), toplayici.norm(it_author)).ratio() if temiz_yazar else 0.6
+                if ts >= 0.45 or ys >= 0.65:
+                    desc = item.get('description') or ''
+                    desc_clean = html.unescape(re.sub(r'<br\s*/?>|</p>', '\n', desc))
+                    desc_clean = re.sub(r'<[^>]+>', '', desc_clean).strip()
+                    if len(desc_clean) > len(sonuc['ozet_orijinal'] or ''):
+                        sonuc['ozet_orijinal'] = desc_clean
+                    art = item.get('artworkUrl100') or ''
+                    if art and not sonuc['kapak_url']:
+                        sonuc['kapak_url'] = art.replace('100x100bb', '600x600bb')
+                    rel = (item.get('releaseDate') or '')[:4]
+                    if rel.isdigit() and not sonuc['yayin_yili']:
+                        sonuc['yayin_yili'] = int(rel)
+                    m_isbn = re.search(r'(97[89]\d{10})', art)
+                    if m_isbn and not sonuc['basili_isbn']:
+                        sonuc['basili_isbn'] = m_isbn.group(1)
                     break
-            sonuc['yayinevi'] = sec_pub
-        isbns = d0.get('isbn') or []
-        if isbns and not sonuc['basili_isbn']:
-            isbn13 = [x for x in isbns if len(x) == 13 and x.startswith('97')]
-            sonuc['basili_isbn'] = isbn13[0] if isbn13 else isbns[0]
-        if not sonuc['kapak_url'] and d0.get('cover_i'):
-            sonuc['kapak_url'] = f"https://covers.openlibrary.org/b/id/{d0['cover_i']}-L.jpg"
+            if not yarim_mi(sonuc['ozet_orijinal']):
+                break
 
-    # 4. Eğer hala özet yoksa Crossref / OpenLibrary Work kontrolü
-    if not sonuc['ozet_orijinal'] or not sonuc['yayinevi']:
+    # 3. Storytel Uluslararası API (EN / DE) - Eğer hala özet kısaysa
+    if yarim_mi(sonuc['ozet_orijinal']):
+        for loc in ('en', 'de', 'tr'):
+            try:
+                st_raw = toplayici.indir(f"https://www.storytel.com/api/search.action?request_locale={loc}&q=" + up.quote(f"{dort_kelime} {yazar_soyad}".strip()))
+                if st_raw:
+                    for sb in (json.loads(st_raw).get('books') or [])[:3]:
+                        b_obj = sb.get('book') or {}
+                        ab_obj = sb.get('abook') or {}
+                        eb_obj = sb.get('ebk') or {}
+                        b_ad = b_obj.get('name') or ''
+                        if difflib.SequenceMatcher(None, toplayici.norm(dort_kelime), toplayici.norm(b_ad[:len(dort_kelime)+10])).ratio() >= 0.5:
+                            st_desc = (ab_obj.get('description') or eb_obj.get('description') or '').strip()
+                            if len(st_desc) > len(sonuc['ozet_orijinal'] or ''):
+                                sonuc['ozet_orijinal'] = st_desc
+                            if not sonuc['kapak_url'] and b_obj.get('largeCover'):
+                                sonuc['kapak_url'] = 'https://www.storytel.com' + b_obj['largeCover']
+                            break
+                if not yarim_mi(sonuc['ozet_orijinal']):
+                    break
+            except Exception:
+                pass
+
+    # 4. OpenLibrary Search + Work Description API
+    ol_q = up.quote(f"{kisa_baslik} {temiz_yazar}".strip())
+    if yarim_mi(sonuc['ozet_orijinal']) or not sonuc['yayinevi'] or not sonuc['yayin_yili']:
+        ol_data = get_json(f"https://openlibrary.org/search.json?q={ol_q}&limit=3&fields=key,title,author_name,first_publish_year,number_of_pages_median,publisher,isbn,cover_i") or {}
+        ol_docs = ol_data.get('docs') or []
+        if ol_docs:
+            d0 = ol_docs[0]
+            if not sonuc['yayin_yili'] and d0.get('first_publish_year'):
+                sonuc['yayin_yili'] = int(d0['first_publish_year'])
+            if not sonuc['sayfa'] and d0.get('number_of_pages_median'):
+                sonuc['sayfa'] = int(d0['number_of_pages_median'])
+            pubs = d0.get('publisher') or []
+            if pubs and not sonuc['yayinevi']:
+                sec_pub = pubs[0]
+                for p in pubs:
+                    if any(ak in p.lower() for ak in AKADEMIK_YAYINEVLERI):
+                        sec_pub = p
+                        break
+                sonuc['yayinevi'] = sec_pub
+            isbns = d0.get('isbn') or []
+            if isbns and not sonuc['basili_isbn']:
+                isbn13 = [x for x in isbns if len(x) == 13 and x.startswith('97')]
+                sonuc['basili_isbn'] = isbn13[0] if isbn13 else isbns[0]
+            if not sonuc['kapak_url'] and d0.get('cover_i'):
+                sonuc['kapak_url'] = f"https://covers.openlibrary.org/b/id/{d0['cover_i']}-L.jpg"
+            if yarim_mi(sonuc['ozet_orijinal']) and d0.get('key'):
+                w_data = get_json(f"https://openlibrary.org{d0['key']}.json") or {}
+                w_desc = w_data.get('description')
+                if isinstance(w_desc, dict):
+                    w_desc = w_desc.get('value') or ''
+                if isinstance(w_desc, str) and len(w_desc.strip()) > len(sonuc['ozet_orijinal'] or ''):
+                    sonuc['ozet_orijinal'] = w_desc.strip()
+
+    # 5. Crossref Abstract kontrolü
+    if yarim_mi(sonuc['ozet_orijinal']) or not sonuc['yayinevi']:
         cr = get_json(f"https://api.crossref.org/works?query.bibliographic={ol_q}&rows=2") or {}
         items = (cr.get('message') or {}).get('items') or []
         for it in items:
             if not sonuc['yayinevi'] and it.get('publisher'):
                 sonuc['yayinevi'] = it['publisher']
-            if not sonuc['ozet_orijinal'] and it.get('abstract'):
-                sonuc['ozet_orijinal'] = html.unescape(re.sub(r'<[^>]+>', ' ', it['abstract'])).strip()
+            if yarim_mi(sonuc['ozet_orijinal']) and it.get('abstract'):
+                ab_txt = html.unescape(re.sub(r'<[^>]+>', ' ', it['abstract'])).strip()
+                if len(ab_txt) > len(sonuc['ozet_orijinal'] or ''):
+                    sonuc['ozet_orijinal'] = ab_txt
 
-    # 5. Özeti ve Başlığı Türkçeye çevir
+    # 6. Özeti ve Başlığı Türkçeye çevir
     if sonuc['ozet_orijinal']:
         sonuc['ozet_tr'] = tr_cevir(sonuc['ozet_orijinal'])
     else:
-        # Özeti hiçbir açık kaynakta bulunamayan nadir kitaplar için başlık ve yazar bilgisinden Türkçe açıklama üret
-        sonuc['ozet_orijinal'] = f"{temiz_baslik} by {sonuc['yazar'] or 'unknown author'}. A specialized psychology and trauma book."
+        sonuc['ozet_orijinal'] = f"{temiz_baslik} by {sonuc['yazar'] or 'unknown author'}."
         sonuc['ozet_tr'] = tr_cevir(f"{temiz_baslik} ({sonuc['yazar']}). Psikoloji, psikanaliz ve travma alanında incelenen eser.")
 
-    if '(' not in baslik:
+    if '(' not in baslik and not sonuc['baslik_tr']:
         cev_b = tr_cevir(temiz_baslik)
         if cev_b and toplayici.norm(cev_b) != toplayici.norm(temiz_baslik):
             sonuc['baslik_tr'] = cev_b
@@ -322,79 +448,90 @@ def yabanci_kitap_tara(isbn_id, baslik, yazar):
 
 
 def turkce_kitap_tara(isbn_id, baslik, yazar):
-    """Türkçe psikoloji kitabını Kitapyurdu, Storytel ve Goodreads üzerinden tarar."""
+    """Türkçe psikoloji kitabını Kitapyurdu, Storytel ve Goodreads tam sayfa üzerinden tarar."""
     onb_yol = os.path.join(PSK_ONB, f"{isbn_id}.json")
+    eski = {}
     if os.path.exists(onb_yol):
         try:
             with open(onb_yol, 'r', encoding='utf8') as f:
-                d = json.load(f)
-                if d.get('ozet') and d.get('kapak_url'):
-                    return d
+                eski = json.load(f)
+            if not yarim_mi(eski.get('ozet')) and eski.get('kapak_url'):
+                return eski
         except Exception:
-            pass
+            eski = {}
 
+    ana_baslik = baslik.split(' - ')[0].split('(')[0].strip()
     ky = toplayici.kitapyurdu(isbn_id, baslik, yazar) or {}
+    if not ky.get('tanitim') and ana_baslik != baslik:
+        # Alt başlık yüzünden eşleşmediyse önbelleği silip ana başlıkla tekrar ara
+        ky_onb = os.path.join(ONBELLEK, f"ky_{isbn_id}.json")
+        if os.path.exists(ky_onb):
+            try:
+                os.remove(ky_onb)
+            except Exception:
+                pass
+        ky = toplayici.kitapyurdu(isbn_id, ana_baslik, yazar) or {}
 
     # Storytel başlık/yazar araması
     st_kitap, st_ab = {}, {}
-    try:
-        sorgu = f"{baslik} {yazar}".strip()
-        s_arama = toplayici.indir('https://www.storytel.com/api/search.action?request_locale=tr&q=' + up.quote(sorgu))
-        if s_arama:
-            for sb in (json.loads(s_arama).get('books') or []):
-                b_obj = sb.get('book') or {}
-                b_ad = b_obj.get('name') or ''
-                if difflib.SequenceMatcher(None, toplayici.norm(baslik), toplayici.norm(b_ad)).ratio() >= 0.65:
-                    st_kitap = b_obj
-                    st_ab = sb.get('abook') or {}
-                    break
-    except Exception:
-        pass
+    for sorgu in dict.fromkeys([f"{ana_baslik} {yazar}".strip(), f"{baslik} {yazar}".strip(), ana_baslik]):
+        try:
+            s_arama = toplayici.indir('https://www.storytel.com/api/search.action?request_locale=tr&q=' + up.quote(sorgu))
+            if s_arama:
+                for sb in (json.loads(s_arama).get('books') or []):
+                    b_obj = sb.get('book') or {}
+                    b_ad = b_obj.get('name') or ''
+                    if difflib.SequenceMatcher(None, toplayici.norm(ana_baslik), toplayici.norm(b_ad[:len(ana_baslik)+8])).ratio() >= 0.6:
+                        st_kitap = b_obj
+                        st_ab = sb.get('abook') or (sb.get('ebk') or {})
+                        break
+            if st_ab.get('description'):
+                break
+        except Exception:
+            pass
 
-    kapak_url = ky.get('kapak') or (('https://www.storytel.com' + st_kitap['largeCover']) if st_kitap.get('largeCover') else '')
-    ozet = (ky.get('tanitim') or '').strip()
+    kapak_url = ky.get('kapak') or (('https://www.storytel.com' + st_kitap['largeCover']) if st_kitap.get('largeCover') else '') or eski.get('kapak_url') or ''
+    ozet = (ky.get('tanitim') or '').strip() or (eski.get('ozet') if not yarim_mi(eski.get('ozet')) else '') or ''
     tanitim = (st_ab.get('description') or '').strip()
-    yayinevi = ky.get('yayinevi') or ((st_ab.get('publisher') or {}).get('name') or '')
-    sayfa = ky.get('sayfa') or 0
+    yayinevi = ky.get('yayinevi') or ((st_ab.get('publisher') or {}).get('name') or '') or eski.get('yayinevi') or ''
+    sayfa = ky.get('sayfa') or eski.get('sayfa') or 0
     ym = re.search(r'(\d{4})', (ky.get('yayin_tarihi') or st_ab.get('releaseDateFormat') or ''))
-    yayin_yili = int(ym.group(1)) if ym else None
-    puan = st_kitap.get('grade') or None
-    puan_sayisi = st_kitap.get('nrGrade') or 0
-    basili_isbn = ky.get('basili_isbn') or ''
+    yayin_yili = int(ym.group(1)) if ym else eski.get('yayin_yili')
+    puan = st_kitap.get('grade') or eski.get('puan') or None
+    puan_sayisi = st_kitap.get('nrGrade') or eski.get('puan_sayisi') or 0
+    basili_isbn = ky.get('basili_isbn') or eski.get('basili_isbn') or ''
 
-    # Eksik varsa Goodreads / Apple Books / OpenLibrary ile tamamla
-    if not kapak_url or not ozet or not sayfa or not yayin_yili:
-        gr_liste = get_json("https://www.goodreads.com/book/auto_complete?format=json&q=" + up.quote(f"{baslik} {yazar}".strip())) or []
-        if not gr_liste:
-            gr_liste = get_json("https://www.goodreads.com/book/auto_complete?format=json&q=" + up.quote(baslik)) or []
-        if gr_liste and isinstance(gr_liste, list):
-            it = gr_liste[0]
-            if not kapak_url and it.get('imageUrl') and 'nophoto' not in it['imageUrl']:
-                kapak_url = re.sub(r'\._S[XY]\d+_\.', '.', it['imageUrl'])
-            if not sayfa and it.get('numPages'):
-                sayfa = int(it['numPages'])
-            if not puan and it.get('avgRating'):
-                try:
-                    puan = float(it['avgRating'])
-                    puan_sayisi = int(it.get('ratingsCount') or 0)
-                except Exception:
-                    pass
-            desc_html = (it.get('description') or {}).get('html') or ''
-            if desc_html and not ozet:
-                ozet = html.unescape(re.sub(r'<[^>]+>', ' ', desc_html)).strip()
+    # Eksik veya yarım özet varsa Goodreads Tam Sayfa (__NEXT_DATA__) ile tamamla
+    if not kapak_url or yarim_mi(ozet) or not sayfa or not yayin_yili:
+        for q_tr in dict.fromkeys([f"{ana_baslik} {yazar}".strip(), f"{baslik} {yazar}".strip(), ana_baslik]):
+            gr_liste = get_json("https://www.goodreads.com/book/auto_complete?format=json&q=" + up.quote(q_tr)) or []
+            if gr_liste and isinstance(gr_liste, list):
+                it = gr_liste[0]
+                if not kapak_url and it.get('imageUrl') and 'nophoto' not in it['imageUrl']:
+                    kapak_url = re.sub(r'\._S[XY]\d+_\.', '.', it['imageUrl'])
+                if not sayfa and it.get('numPages'):
+                    sayfa = int(it['numPages'])
+                if not puan and it.get('avgRating'):
+                    try:
+                        puan = float(it['avgRating'])
+                        puan_sayisi = int(it.get('ratingsCount') or 0)
+                    except Exception:
+                        pass
+                if it.get('bookId') and (yarim_mi(ozet) or not yayinevi or not yayin_yili):
+                    tam = goodreads_tam_detay(it['bookId'])
+                    if tam.get('ozet') and len(tam['ozet']) > len(ozet):
+                        ozet = tam['ozet']
+                    if tam.get('yayinevi') and not yayinevi:
+                        yayinevi = tam['yayinevi']
+                    if tam.get('basili_isbn') and not basili_isbn:
+                        basili_isbn = tam['basili_isbn']
+                    if tam.get('sayfa') and not sayfa:
+                        sayfa = tam['sayfa']
+                    if tam.get('yayin_yili') and not yayin_yili:
+                        yayin_yili = tam['yayin_yili']
+                break
 
-    if not kapak_url or not ozet:
-        it_data = get_json(f"https://itunes.apple.com/search?term={up.quote(baslik + ' ' + yazar)}&media=ebook&limit=3") or {}
-        for item in (it_data.get('results') or []):
-            if not ozet and item.get('description'):
-                ozet = html.unescape(re.sub(r'<[^>]+>', ' ', item['description'])).strip()
-            if not kapak_url and item.get('artworkUrl100'):
-                kapak_url = item['artworkUrl100'].replace('100x100bb', '600x600bb')
-            rel = (item.get('releaseDate') or '')[:4]
-            if rel.isdigit() and not yayin_yili:
-                yayin_yili = int(rel)
-
-    if not ozet and tanitim:
+    if yarim_mi(ozet) and not yarim_mi(tanitim):
         ozet, tanitim = tanitim, ''
 
     if not ozet:
@@ -512,10 +649,8 @@ def calistir():
         kapak_dosya = kapak_kaydet(isbn_id, d.get('kapak_url'))
         ak = akademik_mi(baslik, d.get('yazar', ''), d.get('yayinevi', ''), d.get('ozet_orijinal', ''), d.get('ozet_tr', ''))
 
-        ozet_tr_tam = d.get('ozet_tr') or ''
-        baslik_tr = d.get('baslik_tr') or ''
-        if baslik_tr and '(' not in baslik:
-            ozet_tr_tam = f"📌 Türkçe Başlık Çevirisi: {baslik_tr}\n\n{ozet_tr_tam}".strip()
+        ozet_tr_tam = (d.get('ozet_tr') or '').strip()
+        baslik_tr = (d.get('baslik_tr') or '').strip()
 
         return isbn_id, {
             'isbn': isbn_id,
@@ -559,7 +694,7 @@ def calistir():
         }
 
     print("Yabancı travma ve psikoloji kitapları taranıyor (Amazon/Goodreads/Apple Books + Türkçe Çeviri)...", flush=True)
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         for idx, (k_id, veri) in enumerate(ex.map(is_en, en_liste), 1):
             yeni_kayitlar[k_id] = veri
             if idx % 25 == 0 or idx == len(en_liste):

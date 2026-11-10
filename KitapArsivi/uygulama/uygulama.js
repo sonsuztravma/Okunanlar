@@ -217,6 +217,7 @@ function modalAc(isbn) {
   const yabanciMi = k.dil === 'en';
   const ozetBaslik = yabanciMi ? '🇹🇷 Türkçe Özet & Tanıtım (Çeviri)' : 'Kitap Özeti & Arka Kapak Tanıtımı';
   const tanitimBaslik = yabanciMi ? '🇬🇧 Orijinal Tanıtım Yazısı (Amazon / Goodreads)' : 'Basılı Kitap Yayınevi Tanıtımı';
+  const temizOzet = (k.ozet || '').replace(/^📌\s*\[?Türkçe Başlık Çevirisi:[^\n]*\n+/i, '').trim();
 
   $('#modalIcerik').innerHTML = `<div class="detay">
     <div class="sol">
@@ -243,9 +244,9 @@ function modalAc(isbn) {
         ${kutu('Kayıt Kodu', k.isbn)}
         ${kutu('ISBN (Basılı)', k.basili_isbn)}
       </div>
-      ${k.ozet ? `<div class="metin-kutu"><h3>${ozetBaslik}</h3><p>${vurgula(k.ozet, q)}</p></div>` : ''}
-      ${k.tanitim && k.tanitim !== k.ozet ? `<div class="metin-kutu"><h3>${tanitimBaslik}</h3><p>${vurgula(k.tanitim, q)}</p></div>` : ''}
-      ${!k.ozet && !k.tanitim ? '<p style="color:var(--soluk)">Bu kitap için tanıtım metni bulunamadı.</p>' : ''}
+      ${temizOzet ? `<div class="metin-kutu"><h3>${ozetBaslik}</h3><p>${vurgula(temizOzet, q)}</p></div>` : ''}
+      ${k.tanitim && k.tanitim !== temizOzet && k.tanitim !== k.ozet ? `<div class="metin-kutu"><h3>${tanitimBaslik}</h3><p>${vurgula(k.tanitim, q)}</p></div>` : ''}
+      ${!temizOzet && !k.tanitim ? '<p style="color:var(--soluk)">Bu kitap için tanıtım metni bulunamadı.</p>' : ''}
     </div>
   </div>`;
   $('#modal').hidden = false;
