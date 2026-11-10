@@ -1,0 +1,14 @@
+# Arşiv dosyaları ve geçici dosyalar
+*.rar
+*.zip
+*.7z
+
+# Python geçici ve önbellek dosyaları
+__pycache__/
+*.pyc
+KitapArsivi/scratch/
+KitapArsivi/veri/onbellek/
+
+# Yedeklenen eski dosyalar
+eski_index.html
+eski_books.json

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f111a">
+<title>Sonsuz Okumalar - Sesli Kitaplar</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<header class="ust">
+  <div class="ust-ic">
+    <div class="marka">
+      <div class="logo-ikon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1 0-5H20"/>
+          <path d="M9 10a3 3 0 0 1 6 0v1a3 3 0 0 1-6 0v-1z"/>
+          <path d="M7 11v.5a5 5 0 0 0 10 0V11"/>
+        </svg>
+      </div>
+      <div class="marka-yazi">
+        <h1>Sonsuz Okumalar</h1>
+        <span>Sesli Kitaplar</span>
+      </div>
+    </div>
+
+    <div class="arama-kapsul">
+      <div class="arama-girdi">
+        <svg class="ara-ikon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="ara" type="search" placeholder="Kitap, yazar, özet veya arka kapak yazısında ara…" autocomplete="off">
+        <button id="araTemizle" class="ara-sil" hidden title="Aramayı temizle" aria-label="Aramayı temizle">✕</button>
+      </div>
+      <label class="ozet-anahtar" title="Arka kapak ve yayınevi tanıtım metinleri içinde de arama yapar">
+        <input type="checkbox" id="araOzet" checked>
+        <span>Özetlerde ara</span>
+      </label>
+    </div>
+
+    <nav class="sekmeler" role="tablist">
+      <button data-sek="kitaplar" class="aktif" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span>Kitaplık</span>
+      </button>
+      <button data-sek="istatistik" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        <span>İstatistikler</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="hizliKatBar" class="hizli-kat-bar">
+    <div id="hizliKat" class="hizli-kat"></div>
+  </div>
+</header>
+
+<div id="perde" class="perde" hidden></div>
+
+<main id="anaIcerik">
+  <aside id="filtreler" aria-label="Filtreler">
+    <div class="filtre-ust">
+      <h2>Filtreler &amp; Sıralama</h2>
+      <div class="filtre-ust-sag">
+        <button id="temizle" class="buton-metin">Sıfırla</button>
+        <button id="filtreKapat" class="mobil-kapat" aria-label="Filtreleri kapat">✕</button>
+      </div>
+    </div>
+
+    <div class="filtre-govde">
+      <div class="alan">
+        <label for="sirala">Sıralama Ölçütü</label>
+        <select id="sirala">
+          <option value="son_dinleme-d">Son dinleme (yeni → eski)</option>
+          <option value="baslangic-d">Başlangıç tarihi (yeni → eski)</option>
+          <option value="baslangic-a">Başlangıç tarihi (eski → yeni)</option>
+          <option value="baslik-a">Kitap adı (A → Z)</option>
+          <option value="yazar-a">Yazar (A → Z)</option>
+          <option value="yayin_yili-d">Yayın yılı (yeni → eski)</option>
+          <option value="yayin_yili-a">Yayın yılı (eski → yeni)</option>
+          <option value="sayfa-d">Sayfa sayısı (çok → az)</option>
+          <option value="sayfa-a">Sayfa sayısı (az → çok)</option>
+          <option value="sure_sn-d">Dinleme süresi (uzun → kısa)</option>
+          <option value="sure_sn-a">Dinleme süresi (kısa → uzun)</option>
+          <option value="puan-d">Okur puanı (yüksek → düşük)</option>
+        </select>
+      </div>
+
+      <div class="alan-ikili">
+        <div class="alan">
+          <label for="fDinYil">Dinleme Yılı</label>
+          <select id="fDinYil"><option value="">Tümü</option></select>
+        </div>
+        <div class="alan">
+          <label for="fKat">Ana Kategori</label>
+          <select id="fKat"><option value="">Tümü</option></select>
+        </div>
+      </div>
+
+      <div class="alan">
+        <label for="fAlt">Alt Kategori</label>
+        <select id="fAlt"><option value="">Tümü</option></select>
+      </div>
+
+      <div class="alan">
+        <label for="fYazar">Yazar</label>
+        <input id="fYazar" list="yazarlar" placeholder="Yazar adı yazın veya seçin…">
+        <datalist id="yazarlar"></datalist>
+      </div>
+
+      <div class="alan">
+        <label for="fAnlatici">Seslendiren</label>
+        <input id="fAnlatici" list="anlaticilar" placeholder="Seslendiren adı…">
+        <datalist id="anlaticilar"></datalist>
+      </div>
+
+      <div class="alan">
+        <label for="fYayin">Basılı Yayınevi</label>
+        <select id="fYayin"><option value="">Tümü</option></select>
+      </div>
+
+      <div class="alan">
+        <label>Yayın Yılı Aralığı</label>
+        <div class="ikili"><input id="yilMin" type="number" inputmode="numeric" placeholder="En az"><input id="yilMax" type="number" inputmode="numeric" placeholder="En çok"></div>
+      </div>
+
+      <div class="alan">
+        <label>Sayfa Sayısı Aralığı</label>
+        <div class="ikili"><input id="sfMin" type="number" inputmode="numeric" placeholder="En az"><input id="sfMax" type="number" inputmode="numeric" placeholder="En çok"></div>
+      </div>
+
+      <div class="alan">
+        <label>Dinleme Süresi (Saat)</label>
+        <div class="ikili"><input id="srMin" type="number" step="0.5" inputmode="decimal" placeholder="En az"><input id="srMax" type="number" step="0.5" inputmode="decimal" placeholder="En çok"></div>
+      </div>
+
+      <div class="alan">
+        <div class="etiket-baslik">Konu &amp; Tema Etiketleri</div>
+        <div id="etiketBulut" class="etiket-bulut"></div>
+      </div>
+    </div>
+
+    <div class="filtre-alt-mobil">
+      <button id="filtreUygula" class="vurgu-buton">Sonuçları Göster</button>
+    </div>
+  </aside>
+
+  <div class="icerik-alani">
+    <div class="arac-cubugu">
+      <div class="arac-sol">
+        <button id="mobilFiltreBtn" class="filtre-tetik">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span>Filtrele</span>
+          <b id="aktifFiltreSayi" class="rozet-sayi" hidden>0</b>
+        </button>
+        <div id="sayac" class="sayac"></div>
+      </div>
+
+      <div id="kitapAracSag" class="arac-sag">
+        <select id="mobilSirala" class="mobil-sirala" aria-label="Hızlı sırala"></select>
+        <div class="gorunum" role="group" aria-label="Görünüm seçimi">
+          <button id="gGrid" class="aktif" title="Kapak görünümü" aria-label="Kapak görünümü">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </button>
+          <button id="gListe" title="Detaylı liste görünümü" aria-label="Liste görünümü">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="istatAracSag" class="arac-sag" hidden>
+        <div id="istatYilSec" class="hap-grup" role="group" aria-label="Dinleme yılı"></div>
+        <div id="istatMetrikSec" class="hap-grup" role="group" aria-label="Grafik ölçütü">
+          <button data-m="kitap" class="aktif">Kitap</button>
+          <button data-m="saat">Saat</button>
+          <button data-m="sayfa">Sayfa</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="aktifChipler" class="aktif-chipler" hidden></div>
+
+    <section id="sekKitaplar">
+      <div id="liste" class="grid"></div>
+    </section>
+
+    <section id="sekIstatistik" hidden></section>
+  </div>
+</main>
+
+<div id="modal" class="modal-arka" hidden role="dialog" aria-modal="true">
+  <div class="modal-ic">
+    <div class="modal-ust-cubuk">
+      <span class="modal-ipucu">Kitap Detayı</span>
+      <button id="kapat" class="kapat-btn" aria-label="Kapat">✕</button>
+    </div>
+    <div id="modalIcerik" class="modal-govde"></div>
+  </div>
+</div>
+
+<script src="veri.js"></script>
+<script src="uygulama.js"></script>
+</body>
+</html>
