@@ -1,0 +1,99 @@
+# ====================================================================
+# SONSUZ OKUMALAR - SESLİ & AKADEMİK KİTAP ARŞİVİ
+# ====================================================================
+
+Bu paket, "Sonsuz Okumalar" projesinin en güncel ve eksiksiz tam yedeğidir.
+Storytel sesli kitapları, psikoloji ve travma alanındaki akademik kitaplar,
+ElevenReader dinleme/okuma kayıtları, 1.170'den fazla kitap kapağı ve
+veritabanı önbelleklerinin tamamını içerir.
+
+Bu klasörü herhangi bir bilgisayara (Windows, macOS, Linux) kopyalayıp
+açtığınızda doğrudan çalışacak şekilde tasarlanmıştır.
+
+--------------------------------------------------------------------
+1. KÜTÜPHANEYİ ÇALIŞTIRMA (HIZLI BAŞLANGIÇ)
+--------------------------------------------------------------------
+Uygulamayı görüntülemek için internet bağlantısı veya Python kurulumu
+gerekmez; tamamen bağımsız bir tek sayfa web uygulamasıdır (PWA/SPA).
+
+• YÖNTEM A:
+  Klasör içerisindeki "Kutuphaneyi_Baslat.bat" dosyasına çift tıklayın.
+
+• YÖNTEM B:
+  Klasör içerisindeki "index.html" dosyasını doğrudan herhangi bir
+  web tarayıcısı (Google Chrome, Microsoft Edge, Brave, Firefox vb.)
+  ile açın.
+
+Kütüphane tüm filtreleme, arama, istatistik, APA 7 akademik kaynakça
+kopyalama, Excel/CSV indirme ve Gece/Gündüz okuma modlarıyla hemen
+çalışmaya başlayacaktır.
+
+--------------------------------------------------------------------
+2. YENİ KİTAP EKLEME YÖNETİCİSİ (Kitap_Ekle_Yonetici.bat)
+--------------------------------------------------------------------
+Arşivinize yeni kitaplar eklemek, Storytel CSV'si yüklemek, ElevenReader
+kitaplarını aktarmak veya Word (.docx) dosyasından toplu psikoloji kitabı
+eklemek için yerel yönetim panelini kullanabilirsiniz.
+
+GEREKSİNİM:
+• Bilgisayarınızda Python (3.8+) kurulu olmalıdır.
+• Gerekli Python kütüphaneleri: flask, requests
+  (Komut satırında: pip install flask requests)
+
+NASIL ÇALIŞTIRILIR?
+1. "Kitap_Ekle_Yonetici.bat" dosyasına çift tıklayın.
+2. Konsol açılacak ve tarayıcınızda otomatik olarak
+   http://localhost:5000 adresi yüklenecektir.
+
+YÖNETİM PANELİ İLE NELER YAPABİLİRSİNİZ?
+A) ElevenReader / Harici JSON Yükleme:
+   - "elevenDosyaGirdi" üzerinden JSON dosyasını seçin.
+   - Listelenen kitapların adını/yazarını anında kutucuklardan düzenleyebilir,
+     istemediğiniz dosyaları "Hariç Tut" butonuyla çıkarabilirsiniz.
+   - "Seçilen Kitapları Arşive Aktar" dediğinizde kapak ve detaylar çekilir.
+
+B) Storytel CSV Yükleme:
+   - Storytel hesabınızdan indirdiğiniz güncel CSV dosyasını yükleyin.
+   - Önceki kitaplarınız asla silinmez; yeni eklenenler mevcut arşive katılır.
+
+C) Tek Tek Kitap Ekleme:
+   - ISBN veya Kitap Adı - Yazar girerek dinleme süresiyle birlikte ekleyin.
+
+D) Word (.docx) veya Metin Listesiyle Psikoloji/Akademik Kitap Ekleme:
+   - "Akademik & Psikoloji Kitabı Ekle" kartını açın.
+   - .docx dosyasını seçin ya da her satıra "Kitap Adı - Yazar Adı"
+     gelecek şekilde yapıştırın.
+   - Kaynak dili (İngilizce/Türkçe) seçin.
+   - Amazon, Goodreads ve Apple Books taranarak kapak, sayfa sayısı,
+     özet ve İngilizce'den Türkçe'ye tam çeviri açıklamaları eklenir.
+
+E) GitHub Pages'e Tek Tıkla Gönderme:
+   - Paneldeki "GitHub'a Gönder (Canlıya Al)" butonuna basarak
+     değişiklikleri anında canlı sitenize (sonsuztravma.github.io/Okunanlar)
+     yayınlayabilirsiniz.
+
+--------------------------------------------------------------------
+3. DOSYA VE KLASÖR YAPISI
+--------------------------------------------------------------------
+• index.html               -> Kütüphanenin ana giriş sayfası
+• stil.css                 -> Görsel tasarım, gündüz/gece temaları ve animasyonlar
+• uygulama.js              -> Filtreleme, arama, istatistik ve kaynakça motoru
+• veri.js                  -> Kütüphanedeki 805 kitabın tüm JSON veri havuzu
+• kapaklar/                -> 1.170+ adet yerel yüksek çözünürlüklü kapak görseli
+• logo.png                 -> Sonsuz Travma özgün kristal sonsuzluk logosu
+• favicon.ico / png        -> Tarayıcı sekmesi ve mobil uygulama simgeleri
+• site.webmanifest         -> PWA (Progressive Web App) manifest yapılandırması
+• yonetici.py              -> Web tabanlı kitap yönetim sunucusu (Flask)
+• KitapArsivi/             -> Arka plan veri derleme motoru
+  ├─ olustur.py            -> SQLite veritabanı ve veri.js'yi derleyen betik
+  ├─ toplayici.py          -> Storytel & Kitapyurdu kapak/meta veri çekici
+  ├─ psikoloji_topla.py    -> Goodreads & Amazon & Apple Books çoklu dil çekici
+  └─ veri/onbellek/        -> API önbellekleri ve SQLite (kitaplik.db)
+
+--------------------------------------------------------------------
+4. İLETİŞİM & DESTEK
+--------------------------------------------------------------------
+Görüş, öneri ve geri bildirimleriniz için:
+E-posta: sonsuz.travma@gmail.com
+Canlı Adres: https://sonsuztravma.github.io/Okunanlar/
+GitHub: https://github.com/sonsuztravma/Okunanlar
