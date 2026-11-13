@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 > nul
-title Sonsuz Okumalar - Kitap Yönetim Paneli
+title Sonsuz Okumalar - Kitap Yonetim Paneli
 echo ========================================================
-echo    Sonsuz Okumalar - Kitap Yönetim Paneli Başlatılıyor
+echo    Sonsuz Okumalar - Kitap Yonetim Paneli Baslatiliyor
 echo ========================================================
 echo.
-echo Tarayıcınız açılıyor: http://localhost:5000
+echo Tarayiciniz aciliyor: http://localhost:5000
 echo.
-start http://localhost:5000
+start "" "http://localhost:5000"
 python yonetici.py
 pause

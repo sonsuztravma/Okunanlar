@@ -225,6 +225,30 @@ def logo_dosya():
 def favicon_dosya():
     return send_from_directory(KOK_DIZIN, 'favicon.png')
 
+@app.route('/favicon.ico')
+def favicon_ico_dosya():
+    return send_from_directory(KOK_DIZIN, 'favicon.ico')
+
+@app.route('/index.html')
+def index_html_dosya():
+    return send_from_directory(KOK_DIZIN, 'index.html')
+
+@app.route('/stil.css')
+def stil_css_dosya():
+    return send_from_directory(KOK_DIZIN, 'stil.css')
+
+@app.route('/uygulama.js')
+def uygulama_js_dosya():
+    return send_from_directory(KOK_DIZIN, 'uygulama.js')
+
+@app.route('/veri.js')
+def veri_js_dosya():
+    return send_from_directory(KOK_DIZIN, 'veri.js')
+
+@app.route('/kapaklar/<path:dosya_adi>')
+def kapaklar_dosya(dosya_adi):
+    return send_from_directory(os.path.join(KOK_DIZIN, 'kapaklar'), dosya_adi)
+
 @app.route('/')
 def index():
     hepsi_yol = os.path.join(toplayici.ONB, 'hepsi.json')
@@ -773,9 +797,21 @@ document.getElementById('csvForm').onsubmit = async (e) => {
   const formData = new FormData();
   formData.append('dosya', fileInput.files[0]);
   surecBaslat();
-  const res = await fetch('/csv-yukle', { method: 'POST', body: formData });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
+  try {
+    const res = await fetch('/csv-yukle', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.hata) {
+      alert(data.hata);
+      const bar = document.getElementById('durumBar');
+      bar.classList.remove('aktif');
+      if (kontrolTimer) { clearInterval(kontrolTimer); kontrolTimer = null; }
+    }
+  } catch (err) {
+    alert("Yükleme isteği gönderilemedi: " + err);
+    const bar = document.getElementById('durumBar');
+    bar.classList.remove('aktif');
+    if (kontrolTimer) { clearInterval(kontrolTimer); kontrolTimer = null; }
+  }
 };
 
 // Tek Kitap Formu
