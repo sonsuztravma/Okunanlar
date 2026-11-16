@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0e16">
+<title>Kitap Ekle - Sonsuz Okumalar</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="stil.css">
+<style>
+  .ekle-kapsayici {
+    max-width: 860px;
+    margin: 24px auto 60px;
+    padding: 0 16px;
+  }
+  .kart-panel {
+    background: var(--panel);
+    border: 1px solid var(--kenar);
+    border-radius: var(--yaricap);
+    padding: 22px;
+    margin-bottom: 22px;
+    box-shadow: var(--golge);
+  }
+  .kart-panel h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--yazi);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .kart-panel p {
+    font-size: 0.85rem;
+    color: var(--soluk);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .form-satir {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 640px) {
+    .form-satir { grid-template-columns: 1fr; gap: 10px; }
+  }
+  .alan-grup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .alan-grup label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--soluk);
+  }
+  .alan-grup input,
+  .alan-grup select,
+  .alan-grup textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--kenar);
+    background: var(--panel2);
+    color: var(--yazi);
+    font-size: 0.9rem;
+    outline: none;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+  }
+  .alan-grup input:focus,
+  .alan-grup select:focus,
+  .alan-grup textarea:focus {
+    border-color: var(--vurgu);
+  }
+  .buton-vurgu {
+    background: var(--vurgu);
+    color: #0c0e16;
+    font-weight: 700;
+    border: none;
+    border-radius: 9px;
+    padding: 12px 18px;
+    cursor: pointer;
+    font-size: 0.92rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .buton-vurgu:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+  }
+  .buton-vurgu:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .buton-ikincil {
+    background: var(--panel2);
+    color: var(--yazi);
+    border: 1px solid var(--kenar);
+    border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .buton-ikincil:hover {
+    border-color: var(--vurgu);
+  }
+  .etiket-secici {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--panel2);
+    border-radius: 8px;
+    border: 1px solid var(--kenar);
+  }
+  .etiket-sec-cip {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--kenar);
+    color: var(--yazi-ikincil);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.12s;
+  }
+  .etiket-sec-cip.secili {
+    background: var(--vurgu);
+    color: #0c0e16;
+    border-color: var(--vurgu);
+    font-weight: 700;
+  }
+  .token-kutu {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 18px;
+  }
+  .onizleme-kutu {
+    display: flex;
+    gap: 16px;
+    background: var(--panel2);
+    border: 1px solid var(--kenar);
+    border-radius: 10px;
+    padding: 12px;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .onizleme-kapak {
+    width: 64px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #000;
+  }
+  .bildirim-cubuk {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e2436;
+    border: 1px solid var(--vurgu);
+    padding: 12px 24px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    display: none;
+    z-index: 1000;
+    align-items: center;
+    gap: 10px;
+  }
+  .bildirim-cubuk.aktif { display: flex; }
+</style>
+</head>
+<body>
+<header class="ust">
+  <div class="ust-ic">
+    <div class="marka">
+      <a href="index.html" style="display:flex;align-items:center;gap:11px;text-decoration:none;">
+        <div class="logo-ikon">
+          <img src="logo.png" alt="Sonsuz Travma Logo">
+        </div>
+        <div class="marka-yazi">
+          <h1>Sonsuz Okumalar</h1>
+          <span>Kitap Ekleme Paneli</span>
+        </div>
+      </a>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+      <a href="index.html" class="arac-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">📖 Kütüphaneye Dön</a>
+      <button id="temaBtn" class="tema-btn" title="Temayı değiştir">☀️ Gündüz</button>
+    </div>
+  </div>
+</header>
+
+<main class="ekle-kapsayici">
+  <!-- GitHub Erişim Ayarı -->
+  <div class="token-kutu">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <strong style="color:var(--vurgu-acik);font-size:0.95rem;">🔑 GitHub Yetkilendirmesi (Kişisel Token)</strong>
+      <span id="tokenDurum" style="font-size:0.78rem;color:var(--soluk);">Token kaydedilmedi</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--yazi-ikincil);margin-bottom:10px;line-height:1.45;">
+      Herhangi bir cihazdan kütüphanenize kitap ekleyip doğrudan GitHub'a kaydedebilmek için <strong>repo</strong> yetkisine sahip bir GitHub Personal Access Token (PAT) gereklidir. Token'ınız sadece bu tarayıcının yerel hafızasında (localStorage) saklanır, hiçbir sunucuya iletilmez.
+    </p>
+    <div style="display:flex;gap:8px;">
+      <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--kenar);background:var(--panel);color:var(--yazi);font-size:0.85rem;">
+      <button type="button" class="buton-vurgu" style="padding:8px 16px;font-size:0.85rem;" onclick="tokenKaydet()">Kaydet</button>
+    </div>
+  </div>
+
+  <!-- Hızlı Arama & Otomatik Doldurma (OpenLibrary) -->
+  <div class="kart-panel">
+    <h2>🔍 Kitap Bilgilerini Otomatik Getir</h2>
+    <p>Kitap adı veya ISBN yazarak OpenLibrary üzerinden başlık, yazar ve kapak bilgilerini tek tıkla getirebilirsiniz:</p>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="hizliArama" placeholder="Örn: Balık İzlerinin Sesi veya 9789750537509" style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--kenar);background:var(--panel2);color:var(--yazi);font-size:0.9rem;">
+      <button type="button" class="buton-ikincil" onclick="hizliAra()">Ara &amp; Doldur</button>
+    </div>
+    <div id="hizliSonuc" style="display:none;" class="onizleme-kutu">
+      <img id="onizlemeResim" src="" class="onizleme-kapak" alt="Kapak">
+      <div style="flex:1;">
+        <strong id="onizlemeBaslik" style="display:block;font-size:0.92rem;color:var(--yazi);"></strong>
+        <span id="onizlemeYazar" style="display:block;font-size:0.82rem;color:var(--soluk);"></span>
+      </div>
+      <button type="button" class="buton-vurgu" style="padding:6px 12px;font-size:0.8rem;" onclick="formaAktar()">Forma Aktar</button>
+    </div>
+  </div>
+
+  <!-- Kitap Ekleme Formu -->
+  <form id="kitapForm" class="kart-panel">
+    <h2>➕ Kitap Bilgileri</h2>
+    <p>Lütfen bilgileri kontrol edin ve gerekli alanları doldurun:</p>
+
+    <div class="form-satir">
+      <div class="alan-grup">
+        <label for="baslik">Kitap Adı *</label>
+        <input type="text" id="baslik" required placeholder="Kitap adını girin">
+      </div>
+      <div class="alan-grup">
+        <label for="yazar">Yazar Adı *</label>
+        <input type="text" id="yazar" required placeholder="Yazar adını girin">
+      </div>
+    </div>
+
+    <div class="form-satir">
+      <div class="alan-grup">
+        <label for="isbn">ISBN / Kod (Boş bırakılırsa otomatik üretilir)</label>
+        <input type="text" id="isbn" placeholder="Örn: 9789750537509">
+      </div>
+      <div class="alan-grup">
+        <label for="anlatici">Seslendiren (Varsa)</label>
+        <input type="text" id="anlatici" placeholder="Örn: Deniz Yüce Başarır">
+      </div>
+    </div>
+
+    <div class="form-satir">
+      <div class="alan-grup">
+        <label for="kategori">Ana Kategori</label>
+        <select id="kategori">
+          <option value="Roman">Roman</option>
+          <option value="Öykü">Öykü</option>
+          <option value="Kurgu Dışı">Kurgu Dışı</option>
+          <option value="Biyografi &amp; Anı">Biyografi &amp; Anı</option>
+          <option value="Klasikler">Klasikler</option>
+          <option value="Tarih">Tarih</option>
+          <option value="Polisiye &amp; Gizem">Polisiye &amp; Gizem</option>
+          <option value="Dil Öğrenimi">Dil Öğrenimi</option>
+          <option value="Çocuk &amp; Gençlik">Çocuk &amp; Gençlik</option>
+          <option value="Kişisel Gelişim">Kişisel Gelişim</option>
+          <option value="Şiir">Şiir</option>
+        </select>
+      </div>
+      <div class="alan-grup">
+        <label for="alt_kategori">Alt Kategori</label>
+        <input type="text" id="alt_kategori" placeholder="Örn: Psikoloji Kitapları, Çağdaş Roman">
+      </div>
+    </div>
+
+    <div class="form-satir">
+      <div class="alan-grup">
+        <label for="sure_saat">Dinleme Süresi (Saat - Sesli Kitap ise)</label>
+        <input type="number" id="sure_saat" step="0.1" placeholder="Örn: 8.5">
+      </div>
+      <div class="alan-grup">
+        <label for="sayfa">Sayfa Sayısı</label>
+        <input type="number" id="sayfa" placeholder="Örn: 240">
+      </div>
+    </div>
+
+    <div class="form-satir">
+      <div class="alan-grup">
+        <label for="yayinevi">Yayınevi</label>
+        <input type="text" id="yayinevi" placeholder="Örn: İletişim Yayınları">
+      </div>
+      <div class="alan-grup">
+        <label for="yayin_yili">Yayın Yılı</label>
+        <input type="number" id="yayin_yili" placeholder="Örn: 2024">
+      </div>
+    </div>
+
+    <div class="alan-grup">
+      <label for="kapak_url">Kapak Görseli URL'si (İsteğe bağlı, boşsa tipografik kapak atanır)</label>
+      <input type="url" id="kapak_url" placeholder="https://covers.openlibrary.org/b/id/xxxx-L.jpg">
+    </div>
+
+    <div class="alan-grup">
+      <label>Konu &amp; Tema Etiketleri</label>
+      <div id="etiketListesi" class="etiket-secici"></div>
+    </div>
+
+    <div class="alan-grup">
+      <label for="ozet">Özet / Arka Kapak Tanıtım Yazısı</label>
+      <textarea id="ozet" rows="4" placeholder="Kitap özeti veya arka kapak yazısı..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:12px;align-items:center;margin-top:10px;">
+      <button type="submit" id="kaydetBtn" class="buton-vurgu" style="flex:1;">🚀 Kitabı GitHub Kütüphanesine Kaydet</button>
+    </div>
+  </form>
+</main>
+
+<div id="bildirim" class="bildirim-cubuk">
+  <span id="bildirimMetin">İşlem yapılıyor...</span>
+</div>
+
+<script>
+const ETIKETLER = [
+  'Aile', 'Anadolu & Köy', 'Aşk & İlişkiler', 'Bilim Kurgu', 'Biyografi', 'Din & Tasavvuf',
+  'Doğa & Hayvanlar', 'Edebiyat & Yazarlık', 'Fantastik', 'Felsefe & Varoluş', 'Gizem & Suç',
+  'Göç & Sürgün', 'Hapis & Hesaplaşma', 'Kadın', 'Mahalle & Gündelik Hayat', 'Mitoloji & Antik',
+  'Mizah', 'Psikolojik', 'Sanat & Müzik', 'Savaş', 'Seyahat', 'Siyaset & Toplum', 'Tarihî',
+  'Yapay Zekâ & Teknoloji', 'Yemek', 'Çocukluk & Gençlik', 'Ölüm & Yas', 'İngilizce', 'İstanbul'
+];
+
+let seciliEtiketler = new Set();
+let bulunanArama = null;
+
+// Tema Yönetimi
+function temaYukle() {
+  const t = localStorage.getItem('okunanlar_tema') || 'koyu';
+  if (t === 'acik') {
+    document.documentElement.setAttribute('data-tema', 'acik');
+    document.getElementById('temaBtn').textContent = '🌙 Koyu Mod';
+  } else {
+    document.documentElement.removeAttribute('data-tema');
+    document.getElementById('temaBtn').textContent = '☀️ Gündüz';
+  }
+}
+document.getElementById('temaBtn').onclick = () => {
+  const mevcut = document.documentElement.getAttribute('data-tema');
+  if (mevcut === 'acik') {
+    document.documentElement.removeAttribute('data-tema');
+    localStorage.setItem('okunanlar_tema', 'koyu');
+    document.getElementById('temaBtn').textContent = '☀️ Gündüz';
+  } else {
+    document.documentElement.setAttribute('data-tema', 'acik');
+    localStorage.setItem('okunanlar_tema', 'acik');
+    document.getElementById('temaBtn').textContent = '🌙 Koyu Mod';
+  }
+};
+temaYukle();
+
+// Etiketleri Render Et
+const etiketKutu = document.getElementById('etiketListesi');
+ETIKETLER.forEach(et => {
+  const span = document.createElement('span');
+  span.className = 'etiket-sec-cip';
+  span.textContent = et;
+  span.onclick = () => {
+    if (seciliEtiketler.has(et)) {
+      seciliEtiketler.delete(et);
+      span.classList.remove('secili');
+    } else {
+      seciliEtiketler.add(et);
+      span.classList.add('secili');
+    }
+  };
+  etiketKutu.appendChild(span);
+});
+
+// Token Yönetimi
+function tokenGuncelleUI() {
+  const token = localStorage.getItem('okunanlar_gh_token');
+  const d = document.getElementById('tokenDurum');
+  if (token) {
+    d.textContent = '✓ Token kayıtlı (' + token.substring(0, 4) + '...' + token.slice(-3) + ')';
+    d.style.color = '#10b981';
+    document.getElementById('ghToken').value = token;
+  } else {
+    d.textContent = 'Token kaydedilmedi';
+    d.style.color = 'var(--soluk)';
+  }
+}
+function tokenKaydet() {
+  const val = document.getElementById('ghToken').value.trim();
+  if (val) {
+    localStorage.setItem('okunanlar_gh_token', val);
+    bildirimGoster('✓ Token başarıyla kaydedildi!');
+  } else {
+    localStorage.removeItem('okunanlar_gh_token');
+    bildirimGoster('Token kaldırıldı.');
+  }
+  tokenGuncelleUI();
+}
+tokenGuncelleUI();
+
+function bildirimGoster(msg, sure = 3000) {
+  const b = document.getElementById('bildirim');
+  document.getElementById('bildirimMetin').textContent = msg;
+  b.classList.add('aktif');
+  setTimeout(() => b.classList.remove('aktif'), sure);
+}
+
+// OpenLibrary Hızlı Arama
+async function hizliAra() {
+  const q = document.getElementById('hizliArama').value.trim();
+  if (!q) return;
+  bildirimGoster('🔍 Aranıyor...');
+  try {
+    const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=1`);
+    const data = await res.json();
+    if (data.docs && data.docs.length > 0) {
+      const doc = data.docs[0];
+      bulunanArama = {
+        baslik: doc.title,
+        yazar: doc.author_name ? doc.author_name[0] : '',
+        yayin_yili: doc.first_publish_year || null,
+        sayfa: doc.number_of_pages_median || null,
+        isbn: (doc.isbn && doc.isbn[0]) ? doc.isbn[0] : '',
+        kapak_url: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : ''
+      };
+      document.getElementById('hizliSonuc').style.display = 'flex';
+      document.getElementById('onizlemeBaslik').textContent = bulunanArama.baslik;
+      document.getElementById('onizlemeYazar').textContent = bulunanArama.yazar;
+      const img = document.getElementById('onizlemeResim');
+      if (bulunanArama.kapak_url) {
+        img.src = bulunanArama.kapak_url;
+        img.style.display = 'block';
+      } else {
+        img.style.display = 'none';
+      }
+      bildirimGoster('Kitap bulundu!');
+    } else {
+      alert('OpenLibrary üzerinde sonuç bulunamadı. Lütfen form alanlarını manuel doldurun.');
+    }
+  } catch (err) {
+    alert('Arama yapılırken hata oluştu: ' + err);
+  }
+}
+
+function formaAktar() {
+  if (!bulunanArama) return;
+  document.getElementById('baslik').value = bulunanArama.baslik || '';
+  document.getElementById('yazar').value = bulunanArama.yazar || '';
+  if (bulunanArama.isbn) document.getElementById('isbn').value = bulunanArama.isbn;
+  if (bulunanArama.yayin_yili) document.getElementById('yayin_yili').value = bulunanArama.yayin_yili;
+  if (bulunanArama.sayfa) document.getElementById('sayfa').value = bulunanArama.sayfa;
+  if (bulunanArama.kapak_url) document.getElementById('kapak_url').value = bulunanArama.kapak_url;
+  bildirimGoster('Bilgiler forma aktarıldı!');
+}
+
+// GitHub'a Commit Etme
+document.getElementById('kitapForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const token = localStorage.getItem('okunanlar_gh_token');
+  if (!token) {
+    alert('Lütfen önce yukarıdaki alana GitHub Kişisel Erişim Tokenınızı (PAT) girip kaydedin!');
+    document.getElementById('ghToken').focus();
+    return;
+  }
+
+  const btn = document.getElementById('kaydetBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ GitHub ile eşitleniyor...';
+
+  try {
+    const repo = 'sonsuztravma/Okunanlar';
+    bildirimGoster('GitHub veri.js dosyası çekiliyor...', 5000);
+
+    // 1. Mevcut veri.js SHA ve içeriğini al
+    const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/veri.js`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (!getRes.ok) {
+      throw new Error(`GitHub veri.js alınamadı (${getRes.status}). Token yetkilerini kontrol edin.`);
+    }
+
+    const fileData = await getRes.json();
+    const sha = fileData.sha;
+    
+    // Base64 decode (UTF-8 destekli)
+    const rawContent = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
+    const prefix = 'window.KITAPLIK = ';
+    let liste = [];
+    if (rawContent.includes(prefix)) {
+      const jsonStr = rawContent.split(prefix)[1].replace(/;\s*$/, '');
+      liste = JSON.parse(jsonStr);
+    } else {
+      throw new Error('veri.js formatı geçerli bulunamadı.');
+    }
+
+    // 2. Yeni Kitap Nesnesi Oluştur
+    const baslik = document.getElementById('baslik').value.trim();
+    const yazar = document.getElementById('yazar').value.trim();
+    let isbn = document.getElementById('isbn').value.trim();
+    if (!isbn) {
+      isbn = 'KITAP_' + Date.now().toString(36).toUpperCase();
+    }
+
+    const sureSaat = parseFloat(document.getElementById('sure_saat').value || 0);
+    const sureSn = Math.round(sureSaat * 3600);
+    const sayfa = parseInt(document.getElementById('sayfa').value || 0) || null;
+    const yayinYili = parseInt(document.getElementById('yayin_yili').value || 0) || null;
+    const bugun = new Date().toISOString().slice(0, 10);
+    const kapakUrl = document.getElementById('kapak_url').value.trim();
+
+    const yeniKitap = {
+      isbn: isbn,
+      baslik: baslik,
+      orijinal_baslik: '',
+      yazar: yazar,
+      anlatici: document.getElementById('anlatici').value.trim(),
+      ceviren: '',
+      sesli_yayinci: '',
+      yayinevi: document.getElementById('yayinevi').value.trim(),
+      basili_isbn: isbn,
+      yayin_yili: yayinYili,
+      sesli_tarih: bugun,
+      sayfa: sayfa,
+      sayfa_tahmini: false,
+      sure_sn: sureSn,
+      ilerleme: 100,
+      baslangic: bugun,
+      son_dinleme: bugun,
+      dinleme_yili: new Date().getFullYear(),
+      kategori: document.getElementById('kategori').value,
+      alt_kategori: document.getElementById('alt_kategori').value.trim() || document.getElementById('kategori').value,
+      etiketler: Array.from(seciliEtiketler),
+      seri: null,
+      akademik: false,
+      psk_kitap: false,
+      storytel_kitap: sureSn > 0,
+      sesli_kitap: sureSn > 0,
+      dil: 'tr',
+      puan: null,
+      puan_sayisi: null,
+      ozet: document.getElementById('ozet').value.trim(),
+      tanitim: document.getElementById('ozet').value.trim(),
+      kapak_sesli: kapakUrl || null,
+      kapak_basili: kapakUrl || null,
+      kaynak_storytel: sureSn > 0,
+      kaynak_kitapyurdu: null
+    };
+
+    // Mevcut listede varsa güncelle, yoksa ekle
+    const index = liste.findIndex(k => k.isbn === isbn);
+    if (index >= 0) {
+      liste[index] = yeniKitap;
+    } else {
+      liste.push(yeniKitap);
+    }
+
+    // 3. Yeni içeriği Base64 formatına çevirip commit et
+    const yeniIcerikStr = 'window.KITAPLIK = ' + JSON.stringify(liste, null, 2) + ';\n';
+    const yeniBase64 = btoa(unescape(encodeURIComponent(yeniIcerikStr)));
+
+    bildirimGoster('GitHub\'a kaydediliyor...', 5000);
+    const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/veri.js`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      body: JSON.stringify({
+        message: `feat(kitap): ${baslik} - ${yazar} eklendi (Online)`,
+        content: yeniBase64,
+        sha: sha
+      })
+    });
+
+    if (!putRes.ok) {
+      const errData = await putRes.json();
+      throw new Error(`GitHub kaydetme hatası: ${errData.message || putRes.status}`);
+    }
+
+    bildirimGoster('✓ Kitap başarıyla GitHub\'a kaydedildi!', 5000);
+    alert(`"${baslik}" kitabı başarıyla eklendi ve GitHub'a kaydedildi!\n\nGitHub Pages 1-2 dakika içinde güncellenecektir. Yerel uygulamanızı açtığınızda otomatik olarak yeni kitap çekilecektir.`);
+    document.getElementById('kitapForm').reset();
+    seciliEtiketler.clear();
+    document.querySelectorAll('.etiket-sec-cip').forEach(c => c.classList.remove('secili'));
+    document.getElementById('hizliSonuc').style.display = 'none';
+
+  } catch (err) {
+    alert('Hata oluştu: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🚀 Kitabı GitHub Kütüphanesine Kaydet';
+  }
+};
+</script>
+</body>
+</html>

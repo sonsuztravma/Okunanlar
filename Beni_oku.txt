@@ -29,56 +29,41 @@ kopyalama, Excel/CSV indirme ve Gece/Gündüz okuma modlarıyla hemen
 çalışmaya başlayacaktır.
 
 --------------------------------------------------------------------
-2. YENİ KİTAP EKLEME YÖNETİCİSİ (Kitap_Ekle_Yonetici.bat)
+2. YENİ KİTAP EKLEME & ÇİFT YÖNLÜ SENKRONİZASYON
 --------------------------------------------------------------------
-Arşivinize yeni kitaplar eklemek, Storytel CSV'si yüklemek, ElevenReader
-kitaplarını aktarmak veya Word (.docx) dosyasından toplu psikoloji kitabı
-eklemek için yerel yönetim panelini kullanabilirsiniz.
+Arşivinize hem yerel bilgisayarınızdan hem de TELEFON, TABLET veya başka bir
+bilgisayardan online olarak kitap ekleyebilirsiniz:
 
-GEREKSİNİM:
-• Bilgisayarınızda Python (3.8+) kurulu olmalıdır.
-• Gerekli Python kütüphaneleri: flask, requests
-  (Komut satırında: pip install flask requests)
+A) ONLİNE KİTAP EKLEME (HERHANGİ BİR CİHAZDAN):
+   - Tarayıcınızda şu adresi açın: https://sonsuztravma.github.io/Okunanlar/ekle.html
+   - GitHub Personal Access Token'ınızı (PAT - repo yetkili) bir kez kaydedin.
+   - Kitap adı/yazarını girin veya OpenLibrary aramasını kullanarak otomatik doldurun.
+   - "Kaydet" butonuna bastığınızda kitap doğrudan GitHub'a commit edilir.
+   - Canlı kütüphaneniz (GitHub Pages) 1-2 dakika içinde güncellenir!
 
-NASIL ÇALIŞTIRILIR?
-1. "Kitap_Ekle_Yonetici.bat" dosyasına çift tıklayın.
-2. Konsol açılacak ve tarayıcınızda otomatik olarak
-   http://localhost:5000 adresi yüklenecektir.
+B) YEREL BİLGİSAYARDA OTOMATİK SENKRONİZASYON:
+   - "Kutuphaneyi_Baslat.bat" veya "Kitap_Ekle_Yonetici.bat" çalıştırıldığında,
+     açılışta otomatik olarak GitHub kontrol edilir ve online eklediğiniz yeni
+     kitaplar anında yerel kütüphanenize çekilir (git pull).
+   - İnternetiniz olmasa bile kütüphane çevrimdışı modda sorunsuz açılır.
+   - Ayrıca "Kitap_Ekle_Yonetici.bat" panelinde yer alan "GitHub'dan Yeni
+     Kitapları Çek" butonu ile istediğiniz an manuel senkronizasyon yapabilirsiniz.
 
-YÖNETİM PANELİ İLE NELER YAPABİLİRSİNİZ?
-A) ElevenReader / Harici JSON Yükleme:
-   - "elevenDosyaGirdi" üzerinden JSON dosyasını seçin.
-   - Listelenen kitapların adını/yazarını anında kutucuklardan düzenleyebilir,
-     istemediğiniz dosyaları "Hariç Tut" butonuyla çıkarabilirsiniz.
-   - "Seçilen Kitapları Arşive Aktar" dediğinizde kapak ve detaylar çekilir.
-
-B) Storytel CSV Yükleme:
-   - Storytel hesabınızdan indirdiğiniz güncel CSV dosyasını yükleyin.
-   - Önceki kitaplarınız asla silinmez; yeni eklenenler mevcut arşive katılır.
-
-C) Tek Tek Kitap Ekleme:
-   - ISBN veya Kitap Adı - Yazar girerek dinleme süresiyle birlikte ekleyin.
-
-D) Word (.docx) veya Metin Listesiyle Psikoloji/Akademik Kitap Ekleme:
-   - "Akademik & Psikoloji Kitabı Ekle" kartını açın.
-   - .docx dosyasını seçin ya da her satıra "Kitap Adı - Yazar Adı"
-     gelecek şekilde yapıştırın.
-   - Kaynak dili (İngilizce/Türkçe) seçin.
-   - Amazon, Goodreads ve Apple Books taranarak kapak, sayfa sayısı,
-     özet ve İngilizce'den Türkçe'ye tam çeviri açıklamaları eklenir.
-
-E) GitHub Pages'e Tek Tıkla Gönderme:
-   - Paneldeki "GitHub'a Gönder (Canlıya Al)" butonuna basarak
-     değişiklikleri anında canlı sitenize (sonsuztravma.github.io/Okunanlar)
-     yayınlayabilirsiniz.
+C) YEREL YÖNETİM PANELİ (Kitap_Ekle_Yonetici.bat):
+   - Storytel CSV yükleme, ElevenReader JSON düzenleme, Word (.docx) veya
+     metin listesiyle toplu psikoloji kitabı ekleme işlemlerini yerel panelden
+     gerçekleştirebilirsiniz.
 
 --------------------------------------------------------------------
 3. DOSYA VE KLASÖR YAPISI
 --------------------------------------------------------------------
 • index.html               -> Kütüphanenin ana giriş sayfası
+• ekle.html                -> Online kitap ekleme paneli (Mobil & Web)
 • stil.css                 -> Görsel tasarım, gündüz/gece temaları ve animasyonlar
 • uygulama.js              -> Filtreleme, arama, istatistik ve kaynakça motoru
-• veri.js                  -> Kütüphanedeki 805 kitabın tüm JSON veri havuzu
+• veri.js                  -> Kütüphanedeki tüm kitapların güncel JSON veri havuzu
+• Kutuphaneyi_Baslat.bat   -> GitHub kontrolü yapıp kütüphaneyi açan başlatıcı
+• Kitap_Ekle_Yonetici.bat  -> Senkronizasyon yapıp yönetim panelini başlatan araç
 • kapaklar/                -> 1.170+ adet yerel yüksek çözünürlüklü kapak görseli
 • logo.png                 -> Sonsuz Travma özgün kristal sonsuzluk logosu
 • favicon.ico / png        -> Tarayıcı sekmesi ve mobil uygulama simgeleri

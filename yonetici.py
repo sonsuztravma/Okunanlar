@@ -233,6 +233,10 @@ def favicon_ico_dosya():
 def index_html_dosya():
     return send_from_directory(KOK_DIZIN, 'index.html')
 
+@app.route('/ekle.html')
+def ekle_html_dosya():
+    return send_from_directory(KOK_DIZIN, 'ekle.html')
+
 @app.route('/stil.css')
 def stil_css_dosya():
     return send_from_directory(KOK_DIZIN, 'stil.css')
@@ -379,6 +383,23 @@ def psikoloji_ekle():
         kwargs={'psk_kitap_listesi': {'dil': dil, 'kitaplar': kitaplar}}
     ).start()
     return jsonify({"mesaj": f"{len(kitaplar)} adet Akademik/Psikoloji kitabı için tarama ve çeviri başlatıldı."})
+
+@app.route('/githubdan-cek', methods=['POST'])
+def githubdan_cek():
+    if islem_durumu["calisiyor"]:
+        return jsonify({"hata": "Bir işlem devam ederken senkronizasyon yapılamaz."}), 400
+    try:
+        log("GitHub'dan en son güncellemeler çekiliyor (git pull)...")
+        p = subprocess.run(["git", "pull", "origin", "main"], cwd=KOK_DIZIN, capture_output=True, text=True)
+        if p.returncode == 0:
+            log("GitHub güncellemeleri başarıyla çekildi!")
+            return jsonify({"mesaj": "GitHub'dan en son kitaplar başarıyla çekildi!\n\n" + (p.stdout or "")})
+        else:
+            hata = p.stderr or p.stdout
+            log(f"Git pull hatası: {hata}")
+            return jsonify({"hata": f"Pull hatası: {hata}"}), 500
+    except Exception as e:
+        return jsonify({"hata": str(e)}), 500
 
 @app.route('/githuba-gonder', methods=['POST'])
 def githuba_gonder():
@@ -592,15 +613,19 @@ HTML_TEMPLATE = """
     <button type="button" class="yesil" onclick="psikolojiListesiEkle()">Psikoloji & Akademik Kitapları Tara ve Ekle</button>
   </div>
 
-  <!-- BÖLÜM 4: GitHub'a Gönderme -->
+  <!-- BÖLÜM 4: GitHub Senkronizasyonu (Çift Yönlü) -->
   <div class="kart">
-    <h2>🚀 Değişiklikleri GitHub Pages'e Yayınla</h2>
-    <p>Yeni eklediğiniz kitapları tek tıkla GitHub deponuza gönderin. Böylece <code>sonsuztravma.github.io/Okunanlar</code> adresiniz hemen güncellensin.</p>
-    <button id="ghBtn" class="yesil" onclick="githubaGonder()">GitHub'a Gönder (Canlıya Al)</button>
+    <h2>🔄 GitHub Senkronizasyonu (Canlıya Al / Değişiklikleri Çek)</h2>
+    <p>Telefondan veya başka bir cihazdan online eklediğiniz kitapları yerel bilgisayarınıza çekebilir veya bu bilgisayarda eklediklerinizi GitHub Pages'e tek tıkla yayınlayabilirsiniz.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <button id="pullBtn" class="mor" onclick="githubdanCek()">📥 GitHub'dan Yeni Kitapları Çek (Senkronize Et)</button>
+      <button id="ghBtn" class="yesil" onclick="githubaGonder()">🚀 GitHub'a Gönder (Canlıya Al)</button>
+    </div>
   </div>
 
   <div class="link-bar">
     <a href="index.html" target="_blank">📖 Kütüphaneyi Aç (Yerel)</a> •
+    <a href="ekle.html" target="_blank">➕ Online Kitap Ekle</a> •
     <a href="https://sonsuztravma.github.io/Okunanlar/" target="_blank">🌐 GitHub Pages (Canlı)</a> •
     <a href="https://github.com/sonsuztravma/Okunanlar" target="_blank">💻 GitHub Deposu</a>
     <div style="margin-top:10px;color:var(--soluk);font-size:0.82rem;">
@@ -863,6 +888,28 @@ async function psikolojiListesiEkle() {
   });
   const data = await res.json();
   if (data.hata) alert(data.hata);
+}
+
+async function githubdanCek() {
+  const btn = document.getElementById('pullBtn');
+  btn.disabled = true;
+  btn.textContent = "Çekiliyor...";
+  surecBaslat();
+  try {
+    const res = await fetch('/githubdan-cek', { method: 'POST' });
+    const data = await res.json();
+    if (data.hata) {
+      alert("Hata: " + data.hata);
+    } else {
+      alert(data.mesaj || "GitHub'dan güncellemeler başarıyla çekildi!");
+      location.reload();
+    }
+  } catch (err) {
+    alert("Hata: " + err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📥 GitHub'dan Yeni Kitapları Çek (Senkronize Et)";
+  }
 }
 
 async function githubaGonder() {
