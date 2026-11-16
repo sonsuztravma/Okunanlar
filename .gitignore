@@ -12,3 +12,8 @@ KitapArsivi/veri/onbellek/
 # Yedeklenen eski dosyalar
 eski_index.html
 eski_books.json
+
+# Gizli token ve anahtar dosyalari
+*TOKEN*
+*token*
+*.key

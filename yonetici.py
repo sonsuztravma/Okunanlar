@@ -661,6 +661,9 @@ function durumKontrol() {
           location.reload();
         }
       }
+    })
+    .catch(err => {
+      console.warn("Durum kontrol hatası:", err);
     });
 }
 
@@ -668,9 +671,9 @@ function surecBaslat() {
   const bar = document.getElementById('durumBar');
   bar.classList.add('aktif');
   document.getElementById('durumMetin').textContent = "Başlatılıyor...";
-  if (!kontrolTimer) {
-    kontrolTimer = setInterval(durumKontrol, 1500);
-  }
+  if (kontrolTimer) clearInterval(kontrolTimer);
+  setTimeout(durumKontrol, 500);
+  kontrolTimer = setInterval(durumKontrol, 1200);
 }
 
 // Dosya seçildiğinde listeyi doldur
