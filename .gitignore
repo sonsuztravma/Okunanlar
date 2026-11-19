@@ -43,3 +43,4 @@ telegram_kitap_indirici.py
 yuklenen_*.csv
 *_port.txt
 *_onbellek.json
+.duzenleyici_*.json

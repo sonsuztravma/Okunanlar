@@ -32,6 +32,18 @@ DB_YOLU = os.path.join(ARSIV_DIZIN, 'veri', 'kitaplik.db')
 ONBELLEK_DOSYASI = os.path.join(KOK_DIZIN, '.duzenleyici_onbellek.json')
 GECMIS_DOSYASI = os.path.join(KOK_DIZIN, '.duzenleyici_gecmis.json')
 
+# KitapArsivi modülleri (toplayici ve olustur)
+if ARSIV_DIZIN not in sys.path:
+    sys.path.insert(0, ARSIV_DIZIN)
+
+try:
+    import toplayici
+    import olustur
+except Exception as e:
+    toplayici = None
+    olustur = None
+    print(f"[!] KitapArsivi toplayici/olustur yüklenemedi: {e}")
+
 # Calibre ebook-convert yolu tespiti (İhtiyaç duyulduğunda dinamik sorgulanır)
 CALIBRE_YOLU = None
 
@@ -288,6 +300,24 @@ class KutuphaneReferans:
                 return oy
         self.onbellek_yazar[n] = None
         return None
+
+    def kutuphanede_var_mi(self, baslik, yazar=""):
+        """Bir kitabın ana kütüphanede (veri.js veya kitaplik.db) mevcut olup olmadığını sorgular."""
+        if not baslik:
+            return False
+        nb = norm(baslik)
+        if nb in self.baslik_haritasi:
+            return True
+        if yazar:
+            sorgu = f"{baslik} {yazar}"
+            b, y, k, g = self.ara(sorgu)
+            if g >= 0.80:
+                return True
+        else:
+            b, y, k, g = self.ara(baslik)
+            if g >= 0.85:
+                return True
+        return False
 
 referans_havuz = KutuphaneReferans()
 
@@ -551,6 +581,8 @@ def analiz_et(dosya_yolu):
         kaynak = "Zaten Standart Formatta"
         guven = 1.0
 
+    kutuphanede_var = referans_havuz.kutuphanede_var_mi(nihai_baslik, nihai_yazar)
+
     return {
         "orijinal_ad": dosya_adi,
         "temiz_ad": temiz_ad,
@@ -559,7 +591,8 @@ def analiz_et(dosya_yolu):
         "onerilen_ad": onerilen_ad,
         "kaynak": kaynak,
         "guven": round(guven * 100),
-        "degisim_gerekli": not zaten_dogru
+        "degisim_gerekli": not zaten_dogru,
+        "kutuphanede_var": kutuphanede_var
     }
 
 # ==============================================================================
@@ -652,7 +685,8 @@ def klasor_tara(hedef_dizin, alt_dizinler=True):
             "mukerrer": False,
             "mukerrer_grup_id": None,
             "mukerrer_nedeni": None,
-            "format_durumu": "belirsiz"  # 'hem_pdf_hem_epub', 'sadece_epub', 'sadece_pdf', 'diger'
+            "format_durumu": "belirsiz",  # 'hem_pdf_hem_epub', 'sadece_epub', 'sadece_pdf', 'diger'
+            "kutuphanede_var": analiz.get("kutuphanede_var", False)
         }
 
         kitap_listesi.append(kitap_item)
@@ -728,7 +762,8 @@ def klasor_tara(hedef_dizin, alt_dizinler=True):
         "sadece_pdf": 0,
         "diger": 0,
         "mukerrer": mukerrer_sayisi,
-        "isim_duzeltilecek": 0
+        "isim_duzeltilecek": 0,
+        "kutuphanede_yok": 0
     }
 
     for eser_anahtar, f_grup in eser_formati_haritasi.items():
@@ -752,6 +787,8 @@ def klasor_tara(hedef_dizin, alt_dizinler=True):
     for k in kitap_listesi:
         if k['analiz']['degisim_gerekli']:
             sayaclar['isim_duzeltilecek'] += 1
+        if not k.get('kutuphanede_var'):
+            sayaclar['kutuphanede_yok'] += 1
         if k['format_durumu'] == 'hem_pdf_hem_epub':
             sayaclar['hem_pdf_hem_epub'] += 1
         elif k['format_durumu'] == 'sadece_epub':
@@ -846,6 +883,7 @@ def api_tara():
             'mukerrer': k['mukerrer'],
             'mukerrer_nedeni': k.get('mukerrer_nedeni'),
             'format_durumu': k['format_durumu'],
+            'kutuphanede_var': k.get('kutuphanede_var', False),
             'analiz': {
                 'tespit_baslik': a.get('tespit_baslik', ''),
                 'tespit_yazar': a.get('tespit_yazar', ''),
@@ -903,6 +941,12 @@ def api_adlandir():
         yeni_ad = re.sub(r'[\\/*?:"<>|]', '', yeni_ad).strip()
         if not yeni_ad:
             continue
+
+        # Kullanıcı manuel isimlendirmede uzantıyı yazmadıysa mevcut uzantıyı koru
+        giris_kok, giris_uzanti = os.path.splitext(yeni_ad)
+        eski_kok, eski_uzanti = os.path.splitext(k['dosya_adi'])
+        if not giris_uzanti and eski_uzanti:
+            yeni_ad += eski_uzanti
 
         yeni_yol = os.path.join(dizin, yeni_ad)
 
@@ -1132,10 +1176,144 @@ def api_dosya_eylem():
         if eylem == 'ac':
             os.startfile(dosya_yolu)
         elif eylem == 'klasorde_goster':
-            subprocess.run(['explorer.exe', '/select,', os.path.normpath(dosya_yolu)])
+            p = os.path.normpath(dosya_yolu)
+            try:
+                subprocess.Popen(f'explorer.exe /select,"{p}"')
+            except Exception:
+                os.startfile(os.path.dirname(p))
         return jsonify({"basarili": True})
     except Exception as e:
         return jsonify({"hata": str(e)}), 500
+
+@app.route('/api/kutuphaneye-ekle', methods=['POST'])
+def api_kutuphaneye_ekle():
+    """
+    Seçili kitap dosyalarını ana kütüphaneye (hepsi.json, kitaplik.db, veri.js) ekler,
+    kapaklarını çıkarır ve arşivi anında günceller.
+    """
+    data = request.json or {}
+    dosya_idleri = data.get('id_listesi', [])
+
+    if not dosya_idleri:
+        return jsonify({"basarili": False, "mesaj": "Eklenecek kitap seçilmedi."}), 400
+
+    if not mevcut_tarama or 'kitaplar' not in mevcut_tarama:
+        return jsonify({"basarili": False, "mesaj": "Önce bir klasör taraması yapmalısınız."}), 400
+
+    kitap_haritasi = {k['id']: k for k in mevcut_tarama['kitaplar']}
+    eklenenler = []
+    hatalar = []
+
+    # hepsi.json oku
+    hepsi_yolu = os.path.join(ARSIV_DIZIN, 'veri', 'onbellek', 'hepsi.json')
+    ham_arsiv = []
+    if os.path.exists(hepsi_yolu):
+        try:
+            with open(hepsi_yolu, 'r', encoding='utf8') as f:
+                ham_arsiv = json.load(f)
+        except Exception as e:
+            print(f"[!] hepsi.json okuma hatası: {e}")
+
+    mevcut_isbnler = {str(k.get('isbn')) for k in ham_arsiv if k.get('isbn')}
+
+    for fid in dosya_idleri:
+        if fid not in kitap_haritasi:
+            continue
+        k = kitap_haritasi[fid]
+        dosya_yolu = k['dosya_yolu']
+        analiz = k.get('analiz', {})
+        baslik = analiz.get('tespit_baslik') or os.path.splitext(k['dosya_adi'])[0]
+        yazar = analiz.get('tespit_yazar') or ''
+        ext = os.path.splitext(dosya_yolu)[1].lower()
+
+        # Zaten kütüphanede var mı kontrolü
+        if k.get('kutuphanede_var') and not data.get('zorla'):
+            continue
+
+        # Benzersiz ISBN / ID oluştur
+        hash_id = hashlib.md5(f"{norm(baslik)}_{norm(yazar)}".encode('utf-8')).hexdigest()[:10].upper()
+        yeni_isbn = f"DOSYA_{hash_id}"
+        
+        # Eğer bu ISBN zaten hepsi.json içinde varsa
+        if yeni_isbn in mevcut_isbnler and not data.get('zorla'):
+            k['kutuphanede_var'] = True
+            continue
+
+        # Kapak görseli çıkarma (PyMuPDF / fitz)
+        kapak_dosya_adi = None
+        try:
+            import fitz
+            doc = fitz.open(dosya_yolu)
+            if len(doc) > 0:
+                page = doc.load_page(0)
+                pix = page.get_pixmap(dpi=150)
+                k_ad = f"{yeni_isbn}_b.jpg"
+                for k_diz in [os.path.join(ARSIV_DIZIN, 'uygulama', 'kapaklar'), os.path.join(KOK_DIZIN, 'kapaklar')]:
+                    os.makedirs(k_diz, exist_ok=True)
+                    pix.save(os.path.join(k_diz, k_ad))
+                kapak_dosya_adi = k_ad
+            doc.close()
+        except Exception as e:
+            pass
+
+        yeni_kayit = {
+            'isbn': yeni_isbn,
+            'baslik_csv': baslik,
+            'yazar_belirtilen': yazar,
+            'sure_sn': 0,
+            'ilerleme': 100,
+            'format': ext.replace('.', '').upper() if ext else 'E-Kitap',
+            'baslangic': datetime.now().strftime('%Y-%m-%d'),
+            'son_dinleme': datetime.now().strftime('%Y-%m-%d'),
+            'storytel': {},
+            'kitapyurdu': {
+                'yayinevi': '',
+                'tanitim': f"{baslik} - {yazar} ({ext.upper()} formatında yerel kütüphane dosyası)",
+                'kapak': None
+            },
+            'kapak_sesli': None,
+            'kapak_basili': kapak_dosya_adi
+        }
+
+        ham_arsiv.append(yeni_kayit)
+        mevcut_isbnler.add(yeni_isbn)
+        eklenenler.append(f"{baslik} - {yazar}")
+        k['kutuphanede_var'] = True
+
+    if eklenenler and olustur:
+        try:
+            # 1. hepsi.json'ı kaydet
+            with open(hepsi_yolu, 'w', encoding='utf8') as f:
+                json.dump(ham_arsiv, f, ensure_ascii=False, indent=2)
+
+            # 2. olustur ile donustur ve kitaplik.db oluştur
+            liste = [olustur.donustur(item) for item in ham_arsiv]
+            olustur.veritabani(liste)
+
+            # 3. veri.js güncelle (hem uygulama/veri.js hem ana veri.js)
+            veri_js_icerik = 'window.KITAPLIK = ' + json.dumps(liste, ensure_ascii=False) + ';\n'
+            with open(os.path.join(ARSIV_DIZIN, 'uygulama', 'veri.js'), 'w', encoding='utf8') as f:
+                f.write(veri_js_icerik)
+            ust_veri_js = os.path.join(KOK_DIZIN, 'veri.js')
+            with open(ust_veri_js, 'w', encoding='utf8') as f:
+                f.write(veri_js_icerik)
+
+            # 4. Referans havuzunu yeniden yükle
+            referans_havuz.yukle()
+
+            # 5. Sayacı güncelle
+            if 'sayaclar' in mevcut_tarama:
+                mevcut_tarama['sayaclar']['kutuphanede_yok'] = max(0, mevcut_tarama['sayaclar'].get('kutuphanede_yok', 0) - len(eklenenler))
+
+        except Exception as e:
+            hatalar.append(f"Kütüphane güncelleme hatası: {e}")
+
+    return jsonify({
+        "basarili": len(hatalar) == 0,
+        "eklenen_sayisi": len(eklenenler),
+        "eklenenler": eklenenler,
+        "hatalar": hatalar
+    })
 
 @app.route('/api/donustur', methods=['POST'])
 def api_donustur():
@@ -1690,6 +1868,7 @@ tr.secili {
       <span>Alt Klasörleri de Tara</span>
     </label>
     <button class="btn btn-yesil" onclick="klasorTara()">🔍 Klasörü Tara &amp; Çözümle</button>
+    <button class="btn btn-mor" onclick="secilenleriKutuphaneyeEkle()" title="Seçilen kitapları ana kütüphaneye (veri.js, kitaplik.db) ekle">➕ Seçilenleri Kütüphaneye Ekle</button>
     
     <div style="width:100%;margin-top:6px;" class="hizli-kisayol">
       Hızlı Seçim: 
@@ -1725,6 +1904,10 @@ tr.secili {
       <div class="kart-baslik">İsim Düzeltilecek <span class="rozet rozet-kaynak">Format</span></div>
       <div class="kart-deger" id="sayacIsim" style="color:var(--vurgu-mor);">0</div>
     </div>
+    <div class="kart" onclick="sekmeDegistir('kutuphanede_yok')">
+      <div class="kart-baslik">Kütüphanede Yok <span class="rozet rozet-kaynak" style="background:rgba(239,68,68,0.15);color:#f87171;">Eksik</span></div>
+      <div class="kart-deger" id="sayacKutuphanedeYok" style="color:#f87171;">0</div>
+    </div>
   </div>
 
   <!-- Liste ve Tablo -->
@@ -1736,6 +1919,7 @@ tr.secili {
       <button class="sekme-btn" data-sekme="sadece_pdf" onclick="sekmeDegistir('sadece_pdf')">📕 Sadece PDF (<span id="sekmeSadecePdf">0</span>)</button>
       <button class="sekme-btn" data-sekme="mukerrer" onclick="sekmeDegistir('mukerrer')">⚠️ Mükerrer Dosyalar (<span id="sekmeMukerrer">0</span>)</button>
       <button class="sekme-btn" data-sekme="isim_degisecek" onclick="sekmeDegistir('isim_degisecek')">✏️ İsim Düzenlenecekler (<span id="sekmeIsim">0</span>)</button>
+      <button class="sekme-btn" data-sekme="kutuphanede_yok" onclick="sekmeDegistir('kutuphanede_yok')">➕ Kütüphanede Olmayanlar (<span id="sekmeKutuphanedeYok">0</span>)</button>
     </div>
     <input type="search" id="filtreArama" class="hizli-ara" placeholder="Listede filtrele veya ara…" oninput="tabloyuFiltrele()">
   </div>
@@ -1751,7 +1935,7 @@ tr.secili {
           <th>Tespit Edilen Kitap Adı &amp; Yazar</th>
           <th>Önerilen İsim (Kitap Adı - Yazar)</th>
           <th style="width:130px;">Eşleşme Kaynağı</th>
-          <th style="width:120px;text-align:right;">İşlemler</th>
+          <th style="width:190px;text-align:right;">İşlemler</th>
         </tr>
       </thead>
       <tbody id="tabloGovde">
@@ -1768,6 +1952,7 @@ tr.secili {
 <!-- Yüzen Toplu İşlem Çubuğu -->
 <div id="yuzenCubuk" class="yuzen-arac-cubugu" style="display:none;">
   <span style="font-weight:700;color:var(--metin-baslik);"><span id="seciliSayisi">0</span> dosya seçildi</span>
+  <button class="btn btn-yesil" onclick="secilenleriKutuphaneyeEkle()" title="Seçilen kitapları ana kütüphaneye ekle">➕ Kütüphaneye Ekle</button>
   <button class="btn btn-yesil" onclick="secilenleriAdlandir()" title="Seçili dosyaların adını Kitap Adı - Yazar.uzantı formatına çevir">🏷️ İsimleri Düzelt (Kitap - Yazar)</button>
   <button class="btn btn-mor" onclick="formatDonusturmeModaliAc()" title="Seçilenleri Calibre ile PDF veya EPUB formatına dönüştür">🔄 Format Dönüştür</button>
   <button class="btn btn-sari" onclick="secilenMukerrerleriArsivle()" title="Seçili mükerrer kopyaları _mukerrer_arsiv klasörüne taşı">🧹 Mükerrerleri Arşivle</button>
@@ -1982,6 +2167,8 @@ function sayaclariGuncelle(s) {
   document.getElementById('sayacSadecePdf').textContent = s.sadece_pdf || 0;
   document.getElementById('sayacMukerrer').textContent = s.mukerrer || 0;
   document.getElementById('sayacIsim').textContent = s.isim_duzeltilecek || 0;
+  const cYok = document.getElementById('sayacKutuphanedeYok');
+  if (cYok) cYok.textContent = s.kutuphanede_yok || 0;
 
   document.getElementById('sekmeToplam').textContent = s.toplam || 0;
   document.getElementById('sekmeCift').textContent = s.hem_pdf_hem_epub || 0;
@@ -1989,6 +2176,8 @@ function sayaclariGuncelle(s) {
   document.getElementById('sekmeSadecePdf').textContent = s.sadece_pdf || 0;
   document.getElementById('sekmeMukerrer').textContent = s.mukerrer || 0;
   document.getElementById('sekmeIsim').textContent = s.isim_duzeltilecek || 0;
+  const sYok = document.getElementById('sekmeKutuphanedeYok');
+  if (sYok) sYok.textContent = s.kutuphanede_yok || 0;
 }
 
 function sekmeDegistir(sekmeAdi) {
@@ -2019,6 +2208,7 @@ function tabloyuYenile() {
     if (aktifSekme === 'sadece_pdf' && k.format_durumu !== 'sadece_pdf') return false;
     if (aktifSekme === 'mukerrer' && !k.mukerrer) return false;
     if (aktifSekme === 'isim_degisecek' && !(k.analiz && k.analiz.degisim_gerekli)) return false;
+    if (aktifSekme === 'kutuphanede_yok' && k.kutuphanede_var) return false;
 
     // Arama filtresi
     if (arama) {
@@ -2065,10 +2255,15 @@ function tabloyuYenile() {
       <td>
         <div style="font-weight:600;color:var(--metin-baslik);">${escHtml(tespitBaslik)}</div>
         <div style="font-size:0.8rem;color:var(--vurgu-mavi);">${escHtml(tespitYazar)}</div>
+        <div style="margin-top:4px;">
+          ${k.kutuphanede_var 
+            ? '<span class="rozet" style="background:rgba(16,185,129,0.15);color:#10b981;font-size:0.7rem;padding:2px 6px;">✅ Kütüphanede</span>' 
+            : '<span class="rozet" style="background:rgba(239,68,68,0.15);color:#f87171;font-size:0.7rem;padding:2px 6px;">⚪ Kütüphanede Yok</span>'}
+        </div>
       </td>
 
       <td class="onerilen-hucre">
-        <input type="text" id="onerilen_${escHtml(k.id)}" value="${escHtml(onerilenAd)}" title="İsmi değiştirmek isterseniz buradan düzenleyebilirsiniz">
+        <input type="text" id="onerilen_${escHtml(k.id)}" value="${escHtml(onerilenAd)}" title="İsmi değiştirmek isterseniz buradan düzenleyip Enter'a basabilir veya 💾 butonuna tıklayabilirsiniz" onkeydown="if(event.key==='Enter') tekilAdlandir('${escHtml(k.id)}')">
       </td>
 
       <td>
@@ -2078,10 +2273,15 @@ function tabloyuYenile() {
       </td>
 
       <td style="text-align:right;">
-        <div style="display:inline-flex;gap:4px;">
-          <button class="btn" style="padding:4px 7px;" onclick="tekilAdlandir('${escHtml(k.id)}')" title="Bu dosyayı önerilen isimle adlandır">🏷️</button>
+        <div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;">
+          ${!k.kutuphanede_var 
+            ? `<button class="btn btn-yesil" style="padding:4px 7px;" onclick="tekilKutuphaneyeEkle('${escHtml(k.id)}')" title="Bu kitabı ana kütüphaneye ekle">➕</button>` 
+            : `<button class="btn" style="padding:4px 7px;opacity:0.4;cursor:default;" title="Zaten kütüphanede mevcut" disabled>✅</button>`}
+          <button class="btn" style="padding:4px 7px;" onclick="tekilAdlandir('${escHtml(k.id)}')" title="Yeni ismi kaydet / yeniden adlandır">💾</button>
           <button class="btn" style="padding:4px 7px;" onclick="dosyaEylemById('${escHtml(k.id)}', 'ac')" title="Dosyayı sistem okuyucusuyla aç">📖</button>
-          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylemById('${escHtml(k.id)}', 'klasorde_goster')" title="Windows Gezgini'nde göster">📂</button>
+          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylemById('${escHtml(k.id)}', 'klasorde_goster')" title="Windows Gezgini'nde klasörü aç ve dosyayı seç">📂</button>
+          <button class="btn" style="padding:4px 7px;" onclick="tekilTasiModaliAc('${escHtml(k.id)}')" title="Bu dosyayı başka bir klasöre taşı">🚚</button>
+          <button class="btn btn-kirmizi" style="padding:4px 7px;" onclick="tekilSil('${escHtml(k.id)}')" title="Bu dosyayı silinenler klasörüne taşı">🗑️</button>
         </div>
       </td>
     </tr>
@@ -2260,6 +2460,84 @@ async function secilenleriSil() {
     }
   } catch(e) {
     bildirimGoster('Silme hatası: ' + e, 'hata');
+  }
+}
+
+async function tekilSil(id) {
+  const k = tumKitaplar.find(item => item.id === id);
+  const dosyaAdi = k ? k.dosya_adi : 'Bu dosya';
+  if (!confirm(`"${dosyaAdi}" dosyasını '_silinenler' çöp klasörüne taşımak istediğinizden emin misiniz?`)) return;
+
+  try {
+    const res = await fetch('/api/sil', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id_listesi: [id], kalici: false})
+    });
+    const data = await res.json();
+    if (data.basarili) {
+      bildirimGoster(`"${dosyaAdi}" silinenler klasörüne taşındı.`, 'basari');
+      klasorTara();
+    } else {
+      bildirimGoster('Silme hatası: ' + (data.hatalar||[]).join(', '), 'hata');
+    }
+  } catch(e) {
+    bildirimGoster('Silme hatası: ' + e, 'hata');
+  }
+}
+
+function tekilTasiModaliAc(id) {
+  seciliIdler = new Set([id]);
+  kopyalaTasiModaliAc('tasi');
+}
+
+async function tekilKutuphaneyeEkle(id) {
+  const k = tumKitaplar.find(item => item.id === id);
+  const isim = (k && k.analiz && k.analiz.tespit_baslik) ? `${k.analiz.tespit_baslik} (${k.dosya_adi})` : (k ? k.dosya_adi : 'Kitap');
+  
+  bildirimGoster(`"${isim}" kütüphaneye ekleniyor...`, 'bilgi');
+  try {
+    const res = await fetch('/api/kutuphaneye-ekle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id_listesi: [id]})
+    });
+    const data = await res.json();
+    if (data.basarili) {
+      bildirimGoster(`"${isim}" ana kütüphaneye başarıyla eklendi!`, 'basari');
+      if (k) k.kutuphanede_var = true;
+      klasorTara();
+    } else {
+      bildirimGoster('Kütüphaneye ekleme hatası: ' + (data.hatalar||[]).join(', '), 'hata');
+    }
+  } catch(e) {
+    bildirimGoster('Hata: ' + e, 'hata');
+  }
+}
+
+async function secilenleriKutuphaneyeEkle() {
+  if (seciliIdler.size === 0) {
+    bildirimGoster('Lütfen kütüphaneye eklenecek kitapları seçin.', 'bilgi');
+    return;
+  }
+  
+  bildirimGoster(`Seçilen ${seciliIdler.size} kitap kütüphaneye ekleniyor...`, 'bilgi');
+  try {
+    const res = await fetch('/api/kutuphaneye-ekle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id_listesi: Array.from(seciliIdler)})
+    });
+    const data = await res.json();
+    if (data.basarili) {
+      bildirimGoster(`${data.eklenen_sayisi} kitap ana kütüphaneye başarıyla eklendi!`, 'basari');
+      secimiTemizle();
+      klasorTara();
+    } else {
+      bildirimGoster('Kütüphaneye ekleme hatası: ' + (data.hatalar||[]).join(', '), 'hata');
+    }
+  } catch(e) {
+    bildirimGoster('Hata: ' + e, 'hata');
   }
 }
 
