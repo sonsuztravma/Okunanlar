@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 
 import fitz  # PyMuPDF
-from flask import Flask, request, jsonify, render_template_string, send_from_directory, send_file
+from flask import Flask, request, jsonify, render_template_string, send_from_directory, send_file, Response
 
 # Temel Dizin Yapısı
 KOK_DIZIN = os.path.dirname(os.path.abspath(__file__))
@@ -814,9 +814,9 @@ def api_klasor_sec():
         return jsonify({"basarili": True, "klasor": secilen})
     return jsonify({"basarili": False, "mesaj": "Klasör seçilmedi veya iptal edildi."})
 
-@app.route('/api/tara', methods=['POST'])
+@app.route('/api/tara', methods=['POST', 'GET'])
 def api_tara():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     klasor = data.get('klasor', '').strip()
     if not klasor:
         klasor = os.path.join(KOK_DIZIN, 'kitaplar')
@@ -826,11 +826,46 @@ def api_tara():
 
     sonuc = klasor_tara(klasor, alt_dizinler=alt_dizinler)
     if "hata" in sonuc:
-        return jsonify(sonuc), 400
+        body = json.dumps(sonuc)
+        return Response(body, status=400, mimetype='application/json')
     
     global mevcut_tarama
     mevcut_tarama = sonuc
-    return jsonify(sonuc)
+
+    # Frontend tablosu için optimize edilmiş temiz kopya (hızlı aktarım ve sıfır soket hatası)
+    kitaplar_hafif = []
+    for k in sonuc.get('kitaplar', []):
+        a = k.get('analiz', {})
+        kitaplar_hafif.append({
+            'id': k['id'],
+            'dosya_yolu': k['dosya_yolu'],
+            'dosya_adi': k['dosya_adi'],
+            'rel_yol': k['rel_yol'],
+            'format': k['format'],
+            'boyut_str': k['boyut_str'],
+            'mukerrer': k['mukerrer'],
+            'mukerrer_nedeni': k.get('mukerrer_nedeni'),
+            'format_durumu': k['format_durumu'],
+            'analiz': {
+                'tespit_baslik': a.get('tespit_baslik', ''),
+                'tespit_yazar': a.get('tespit_yazar', ''),
+                'onerilen_ad': a.get('onerilen_ad', ''),
+                'degisim_gerekli': a.get('degisim_gerekli', False),
+                'kaynak': a.get('kaynak', ''),
+                'guven': a.get('guven', 50)
+            }
+        })
+
+    yanit = {
+        'hedef_dizin': sonuc.get('hedef_dizin', klasor),
+        'sayaclar': sonuc.get('sayaclar', {}),
+        'kitaplar': kitaplar_hafif,
+        'calibre_mevcut': sonuc.get('calibre_mevcut', False),
+        'calibre_yolu': sonuc.get('calibre_yolu')
+    }
+
+    body = json.dumps(yanit)
+    return Response(body, status=200, mimetype='application/json')
 
 @app.route('/api/adlandir', methods=['POST'])
 def api_adlandir():
@@ -1875,6 +1910,16 @@ async function klasorDiyaloguAc() {
   }
 }
 
+function escHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function klasorTara() {
   const inp = document.getElementById('hedefKlasor');
   const klasor = inp ? inp.value.trim() : '';
@@ -1887,6 +1932,15 @@ async function klasorTara() {
   }
   bildirimGoster('Kitap dosyaları taranıyor...', 'bilgi');
 
+  const govde = document.getElementById('tabloGovde');
+  if (govde) {
+    govde.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--vurgu-mavi);">
+      <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
+      <div style="font-weight:600;font-size:1.1rem;margin-bottom:6px;">Kitaplar taranıyor ve analiz ediliyor...</div>
+      <div style="font-size:0.85rem;color:var(--metin-soluk);">Lütfen bekleyin, kitap sayısı fazla olduğunda birkaç saniye sürebilir.</div>
+    </td></tr>`;
+  }
+
   try {
     const res = await fetch('/api/tara', {
       method: 'POST',
@@ -1896,6 +1950,9 @@ async function klasorTara() {
     const data = await res.json();
     if (data.hata) {
       bildirimGoster(data.hata, 'hata');
+      if (govde) {
+        govde.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:#f85149;">❌ Hata: ${escHtml(data.hata)}</td></tr>`;
+      }
       return;
     }
 
@@ -1906,6 +1963,9 @@ async function klasorTara() {
     bildirimGoster(`Tarama tamamlandı: ${tumKitaplar.length} dosya incelendi.`, 'basari');
   } catch(e) {
     bildirimGoster('Tarama sırasında hata oluştu: ' + e, 'hata');
+    if (govde) {
+      govde.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:#f85149;">❌ Bağlantı hatası: ${escHtml(e)}</td></tr>`;
+    }
   } finally {
     if (btnTara) {
       btnTara.disabled = false;
@@ -1915,6 +1975,7 @@ async function klasorTara() {
 }
 
 function sayaclariGuncelle(s) {
+  if (!s) return;
   document.getElementById('sayacToplam').textContent = s.toplam || 0;
   document.getElementById('sayacCift').textContent = s.hem_pdf_hem_epub || 0;
   document.getElementById('sayacSadeceEpub').textContent = s.sadece_epub || 0;
@@ -1947,7 +2008,9 @@ function tabloyuFiltrele() {
 
 function tabloyuYenile() {
   const govde = document.getElementById('tabloGovde');
-  const arama = (document.getElementById('filtreArama').value || '').toLowerCase().trim();
+  if (!govde) return;
+  const aramaInput = document.getElementById('filtreArama');
+  const arama = (aramaInput ? aramaInput.value : '').toLowerCase().trim();
 
   let filtrelenmis = tumKitaplar.filter(k => {
     // Sekme filtresi
@@ -1955,11 +2018,14 @@ function tabloyuYenile() {
     if (aktifSekme === 'sadece_epub' && k.format_durumu !== 'sadece_epub') return false;
     if (aktifSekme === 'sadece_pdf' && k.format_durumu !== 'sadece_pdf') return false;
     if (aktifSekme === 'mukerrer' && !k.mukerrer) return false;
-    if (aktifSekme === 'isim_degisecek' && !k.analiz.degisim_gerekli) return false;
+    if (aktifSekme === 'isim_degisecek' && !(k.analiz && k.analiz.degisim_gerekli)) return false;
 
     // Arama filtresi
     if (arama) {
-      const txt = `${k.dosya_adi} ${k.analiz.tespit_baslik} ${k.analiz.tespit_yazar} ${k.analiz.onerilen_ad}`.toLowerCase();
+      const baslik = (k.analiz && k.analiz.tespit_baslik) ? k.analiz.tespit_baslik : '';
+      const yazar = (k.analiz && k.analiz.tespit_yazar) ? k.analiz.tespit_yazar : '';
+      const onerilen = (k.analiz && k.analiz.onerilen_ad) ? k.analiz.onerilen_ad : '';
+      const txt = `${k.dosya_adi || ''} ${baslik} ${yazar} ${onerilen}`.toLowerCase();
       if (!txt.includes(arama)) return false;
     }
     return true;
@@ -1974,43 +2040,48 @@ function tabloyuYenile() {
   filtrelenmis.forEach(k => {
     const isSecili = seciliIdler.has(k.id);
     const formatRozet = k.format === 'PDF' ? 'rozet-pdf' : (k.format === 'EPUB' ? 'rozet-epub' : 'rozet-cift');
-    const degisimGerekli = k.analiz.degisim_gerekli;
+    const degisimGerekli = k.analiz ? k.analiz.degisim_gerekli : false;
+    const tespitBaslik = (k.analiz && k.analiz.tespit_baslik) ? k.analiz.tespit_baslik : '-';
+    const tespitYazar = (k.analiz && k.analiz.tespit_yazar) ? k.analiz.tespit_yazar : '-';
+    const onerilenAd = (k.analiz && k.analiz.onerilen_ad) ? k.analiz.onerilen_ad : (k.dosya_adi || '');
+    const kaynak = (k.analiz && k.analiz.kaynak) ? k.analiz.kaynak : 'Dosya Adı';
+    const guven = (k.analiz && k.analiz.guven) ? k.analiz.guven : 50;
 
     html += `
-    <tr class="${isSecili ? 'secili' : ''}" id="satir_${k.id}">
-      <td><input type="checkbox" class="satir-secim" data-id="${k.id}" ${isSecili ? 'checked' : ''} onchange="satirSecimDegisti('${k.id}', this.checked)"></td>
+    <tr class="${isSecili ? 'secili' : ''}" id="satir_${escHtml(k.id)}">
+      <td><input type="checkbox" class="satir-secim" data-id="${escHtml(k.id)}" ${isSecili ? 'checked' : ''} onchange="satirSecimDegisti('${escHtml(k.id)}', this.checked)"></td>
       
       <td class="dosya-adi-hucre">
         <div style="display:flex;align-items:center;gap:6px;">
-          <span>${k.dosya_adi}</span>
-          ${k.mukerrer ? `<span class="rozet rozet-mukerrer" title="${k.mukerrer_nedeni}">⚠️ Mükerrer</span>` : ''}
+          <span>${escHtml(k.dosya_adi)}</span>
+          ${k.mukerrer ? `<span class="rozet rozet-mukerrer" title="${escHtml(k.mukerrer_nedeni || 'Mükerrer dosya')}">⚠️ Mükerrer</span>` : ''}
         </div>
-        <div style="font-size:0.75rem;color:var(--metin-soluk);">${k.rel_yol}</div>
+        <div style="font-size:0.75rem;color:var(--metin-soluk);">${escHtml(k.rel_yol)}</div>
       </td>
 
-      <td><span class="rozet ${formatRozet}">${k.format}</span></td>
-      <td style="color:var(--metin-soluk);font-size:0.8rem;">${k.boyut_str}</td>
+      <td><span class="rozet ${formatRozet}">${escHtml(k.format)}</span></td>
+      <td style="color:var(--metin-soluk);font-size:0.8rem;">${escHtml(k.boyut_str)}</td>
 
       <td>
-        <div style="font-weight:600;color:var(--metin-baslik);">${k.analiz.tespit_baslik || '-'}</div>
-        <div style="font-size:0.8rem;color:var(--vurgu-mavi);">${k.analiz.tespit_yazar || '-'}</div>
+        <div style="font-weight:600;color:var(--metin-baslik);">${escHtml(tespitBaslik)}</div>
+        <div style="font-size:0.8rem;color:var(--vurgu-mavi);">${escHtml(tespitYazar)}</div>
       </td>
 
       <td class="onerilen-hucre">
-        <input type="text" id="onerilen_${k.id}" value="${k.analiz.onerilen_ad}" title="İsmi değiştirmek isterseniz buradan düzenleyebilirsiniz">
+        <input type="text" id="onerilen_${escHtml(k.id)}" value="${escHtml(onerilenAd)}" title="İsmi değiştirmek isterseniz buradan düzenleyebilirsiniz">
       </td>
 
       <td>
-        <span class="rozet rozet-kaynak" title="Güven Puanı: %${k.analiz.guven}">
-          ${k.analiz.kaynak}
+        <span class="rozet rozet-kaynak" title="Güven Puanı: %${guven}">
+          ${escHtml(kaynak)}
         </span>
       </td>
 
       <td style="text-align:right;">
         <div style="display:inline-flex;gap:4px;">
-          <button class="btn" style="padding:4px 7px;" onclick="tekilAdlandir('${k.id}')" title="Bu dosyayı önerilen isimle adlandır">🏷️</button>
-          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylem('${k.dosya_yolu}', 'ac')" title="Dosyayı sistem okuyucusuyla aç">📖</button>
-          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylem('${k.dosya_yolu}', 'klasorde_goster')" title="Windows Gezgini'nde göster">📂</button>
+          <button class="btn" style="padding:4px 7px;" onclick="tekilAdlandir('${escHtml(k.id)}')" title="Bu dosyayı önerilen isimle adlandır">🏷️</button>
+          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylemById('${escHtml(k.id)}', 'ac')" title="Dosyayı sistem okuyucusuyla aç">📖</button>
+          <button class="btn" style="padding:4px 7px;" onclick="dosyaEylemById('${escHtml(k.id)}', 'klasorde_goster')" title="Windows Gezgini'nde göster">📂</button>
         </div>
       </td>
     </tr>
@@ -2019,6 +2090,13 @@ function tabloyuYenile() {
 
   govde.innerHTML = html;
   yuzenCubuguGuncelle();
+}
+
+function dosyaEylemById(id, eylem) {
+  const k = tumKitaplar.find(item => item.id === id);
+  if (k && k.dosya_yolu) {
+    dosyaEylem(k.dosya_yolu, eylem);
+  }
 }
 
 function satirSecimDegisti(id, secildi) {
@@ -2273,7 +2351,7 @@ async function donusturmeBaslat() {
 
   btn.disabled = true;
   konsolKutu.style.display = 'block';
-  konsol.textContent = 'Dönüştürme başlatıldı...\n';
+  konsol.textContent = 'Dönüştürme başlatıldı...\\n';
 
   try {
     const res = await fetch('/api/donustur', {
@@ -2286,11 +2364,11 @@ async function donusturmeBaslat() {
       mevcutDonusumId = data.islem_id;
       donusturmeDurumuTakip();
     } else {
-      konsol.textContent += '\nHATA: ' + data.hata;
+      konsol.textContent += '\\nHATA: ' + data.hata;
       btn.disabled = false;
     }
   } catch(e) {
-    konsol.textContent += '\nBağlantı hatası: ' + e;
+    konsol.textContent += '\\nBağlantı hatası: ' + e;
     btn.disabled = false;
   }
 }
@@ -2302,7 +2380,7 @@ function donusturmeDurumuTakip() {
       const res = await fetch(`/api/donustur-durum/${mevcutDonusumId}`);
       const data = await res.json();
       const konsol = document.getElementById('donusturmeKonsol');
-      konsol.textContent = (data.loglar || []).join('\n');
+      konsol.textContent = (data.loglar || []).join('\\n');
       konsol.scrollTop = konsol.scrollHeight;
 
       if (data.bitti) {
