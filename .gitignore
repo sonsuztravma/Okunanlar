@@ -17,3 +17,27 @@ eski_books.json
 *TOKEN*
 *token*
 *.key
+
+# Yerel indirme ve senkronizasyon araçları (Git deposuna eklenmeyecek büyük dosyalar)
+kitaplar/
+annadan/
+annadeneme/
+annas_indirici/
+*.epub
+*.pdf
+binnurkitapnotlar.docx
+*.session
+*.session-journal
+senkronizasyon_gecmisi.json
+sync_config.json
+telegram_config.json
+drive_index.json
+eksik_kitaplar*
+ingilizce_cevirisi_olmayanlar*
+Anna_Kitap_Indirici.bat
+Drive_Kitap_Senkronizator.bat
+drive_kitap_eslestirici.py
+drive_senkronizator_web.py
+telegram_kitap_indirici.py
+
+yuklenen_*.csv

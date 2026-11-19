@@ -212,8 +212,11 @@ def guncelleme_sureci(csv_dosya_yolu=None, eleven_secili_kitaplar=None, tek_kita
 
         log(f"İşlem tamamlandı! Toplam {len(donusturulmus)} kitap hazır.")
     except Exception as e:
+        import traceback
+        tb_str = traceback.format_exc()
+        print(tb_str)
         islem_durumu["son_hata"] = str(e)
-        log(f"Hata oluştu: {e}")
+        log(f"Hata oluştu: {e} -> {tb_str}")
     finally:
         islem_durumu["calisiyor"] = False
 
@@ -297,6 +300,8 @@ def tek_kitap_ekle():
         'baslangic': veri.get('baslangic') or bugun,
         'son_dinleme': veri.get('son_dinleme') or bugun
     }
+    islem_durumu["calisiyor"] = True
+    islem_durumu["mesaj"] = "Kitap ekleme süreci başlatıldı..."
     threading.Thread(target=guncelleme_sureci, kwargs={'tek_kitap_bilgi': k_bilgi}).start()
     return jsonify({"mesaj": "Kitap ekleme süreci başlatıldı."})
 
@@ -312,6 +317,8 @@ def csv_yukle():
     
     hedef = os.path.join(KOK_DIZIN, f"yuklenen_{int(time.time())}.csv")
     dosya.save(hedef)
+    islem_durumu["calisiyor"] = True
+    islem_durumu["mesaj"] = "Storytel CSV dosyası yüklendi, taranıyor..."
     threading.Thread(target=guncelleme_sureci, kwargs={'csv_dosya_yolu': hedef}).start()
     return jsonify({"mesaj": "CSV yükleme ve güncelleme süreci başlatıldı."})
 
@@ -324,6 +331,8 @@ def eleven_secilenleri_ekle():
     if not kitaplar:
         return jsonify({"hata": "Lütfen listeye eklemek için en az bir kitap seçin."}), 400
     
+    islem_durumu["calisiyor"] = True
+    islem_durumu["mesaj"] = f"{len(kitaplar)} adet kitap için aktarma başlatıldı..."
     threading.Thread(target=guncelleme_sureci, kwargs={'eleven_secili_kitaplar': kitaplar}).start()
     return jsonify({"mesaj": f"{len(kitaplar)} adet kitap için aktarma süreci başlatıldı."})
 
@@ -378,6 +387,8 @@ def psikoloji_ekle():
     if not kitaplar:
         return jsonify({"hata": "Geçerli kitap satırı bulunamadı."}), 400
 
+    islem_durumu["calisiyor"] = True
+    islem_durumu["mesaj"] = f"{len(kitaplar)} adet kitap için tarama ve çeviri başlatıldı..."
     threading.Thread(
         target=guncelleme_sureci,
         kwargs={'psk_kitap_listesi': {'dil': dil, 'kitaplar': kitaplar}}
@@ -407,7 +418,8 @@ def githuba_gonder():
         return jsonify({"hata": "Bir işlem devam ederken GitHub'a gönderilemez."}), 400
     try:
         log("GitHub'a commit ve push yapılıyor...")
-        subprocess.run(["git", "add", "."], cwd=KOK_DIZIN, check=True)
+        subprocess.run(["git", "add", "veri.js", "KitapArsivi", "kapaklar", "index.html", "ekle.html", "README.md", "yonetici.py", ".gitignore"], cwd=KOK_DIZIN, check=False)
+        subprocess.run(["git", "add", "-u"], cwd=KOK_DIZIN, check=False)
         t = time.strftime('%d.%m.%Y %H:%M')
         subprocess.run(["git", "commit", "-m", f"update: Yeni kitaplar eklendi ({t})"], cwd=KOK_DIZIN, check=False)
         p = subprocess.run(["git", "push", "origin", "main"], cwd=KOK_DIZIN, capture_output=True, text=True)
@@ -486,9 +498,10 @@ HTML_TEMPLATE = """
   .satir-haric { background: none; border: none; color: var(--soluk); width: auto; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; border-radius: 6px; margin: 0; }
   .satir-haric:hover { color: var(--kirmizi); background: rgba(239, 68, 68, 0.12); }
   
-  .durum-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; border: 1px solid var(--vurgu); padding: 12px 24px; border-radius: 999px; font-size: 0.9rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: none; z-index: 100; }
-  .durum-bar.aktif { display: flex; align-items: center; gap: 10px; }
-  .spinner { width: 14px; height: 14px; border: 2px solid var(--vurgu); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  /* Sabit bildirim çubuğu & modal */
+  .durum-bar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1e2436; border: 2px solid var(--vurgu); padding: 14px 28px; border-radius: 999px; font-size: 0.95rem; font-weight: 600; color: #fff; box-shadow: 0 12px 35px rgba(0,0,0,0.7); display: none; z-index: 9999; }
+  .durum-bar.aktif { display: flex; align-items: center; gap: 12px; }
+  .spinner { width: 18px; height: 18px; border: 3px solid var(--vurgu); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .link-bar { margin-top: 24px; text-align: center; font-size: 0.85rem; }
   .link-bar a { color: var(--vurgu); text-decoration: none; margin: 0 8px; }
@@ -504,7 +517,11 @@ HTML_TEMPLATE = """
         <span style="font-size:0.8rem;color:var(--soluk)">Storytel, ElevenReader & Akademik Kütüphane Yöneticisi</span>
       </div>
     </div>
-    <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <a href="http://localhost:5050" target="_blank" style="padding:6px 14px;background:rgba(56,189,248,0.2);border:1px solid #38bdf8;color:#7dd3fc;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Google Drive, Telegram ve Anna's Archive Kitap Düzenleyici">📂 Kitap Düzenleyici</a>
+      <a href="http://localhost:3000" target="_blank" style="padding:6px 14px;background:rgba(99,102,241,0.2);border:1px solid #6366f1;color:#a5b4fc;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Anna's Archive Kitap İndirici">📥 Kitap İndirici</a>
+      <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
+    </div>
   </header>
 
   <!-- BÖLÜM 1: ElevenReader / Harici JSON Yükleme, Düzenleme ve Seçme -->
@@ -556,8 +573,9 @@ HTML_TEMPLATE = """
       <div class="form-grup">
         <input type="file" id="csvDosya" accept=".csv" required>
       </div>
-      <button type="submit">Storytel CSV Dosyasını İçe Aktar</button>
+      <button type="submit" id="csvYukleBtn">Storytel CSV Dosyasını İçe Aktar</button>
     </form>
+    <div id="csvGeriBildirim" style="margin-top:10px;font-size:0.85rem;color:var(--vurgu-acik);display:none;"></div>
   </div>
 
   <!-- BÖLÜM 3: Tek Kitap Ekleme -->
@@ -641,6 +659,7 @@ HTML_TEMPLATE = """
 
 <script>
 let kontrolTimer = null;
+let islemBasladiMi = false;
 let yuklenenElevenKitaplar = [];
 
 function durumKontrol() {
@@ -650,13 +669,17 @@ function durumKontrol() {
       const bar = document.getElementById('durumBar');
       const metin = document.getElementById('durumMetin');
       if (d.calisiyor) {
+        islemBasladiMi = true;
         bar.classList.add('aktif');
-        metin.textContent = d.mesaj;
+        metin.textContent = d.mesaj || "İşlem yapılıyor...";
       } else {
-        bar.classList.remove('aktif');
-        if (kontrolTimer) {
-          clearInterval(kontrolTimer);
-          kontrolTimer = null;
+        if (islemBasladiMi) {
+          islemBasladiMi = false;
+          bar.classList.remove('aktif');
+          if (kontrolTimer) {
+            clearInterval(kontrolTimer);
+            kontrolTimer = null;
+          }
           alert(d.mesaj || "İşlem tamamlandı!");
           location.reload();
         }
@@ -668,11 +691,12 @@ function durumKontrol() {
 }
 
 function surecBaslat() {
+  islemBasladiMi = true;
   const bar = document.getElementById('durumBar');
   bar.classList.add('aktif');
-  document.getElementById('durumMetin').textContent = "Başlatılıyor...";
+  document.getElementById('durumMetin').textContent = "İşlem başlatılıyor...";
   if (kontrolTimer) clearInterval(kontrolTimer);
-  setTimeout(durumKontrol, 500);
+  durumKontrol();
   kontrolTimer = setInterval(durumKontrol, 1200);
 }
 
@@ -807,37 +831,65 @@ async function secilenleriAktar() {
 
   if (!confirm(`${secilenler.length} adet kitap arşive aktarılacak. Onaylıyor musunuz?`)) return;
 
-  surecBaslat();
-  const res = await fetch('/eleven-secilenleri-ekle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kitaplar: secilenler })
-  });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
+  try {
+    const res = await fetch('/eleven-secilenleri-ekle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kitaplar: secilenler })
+    });
+    const data = await res.json();
+    if (data.hata) {
+      alert("Hata: " + data.hata);
+    } else {
+      surecBaslat();
+    }
+  } catch (err) {
+    alert("İstek gönderilemedi: " + err);
+  }
 }
 
 // Storytel CSV Formu
 document.getElementById('csvForm').onsubmit = async (e) => {
   e.preventDefault();
   const fileInput = document.getElementById('csvDosya');
-  if (!fileInput.files.length) return;
+  if (!fileInput.files.length) {
+    alert("Lütfen önce bir .csv dosyası seçin.");
+    return;
+  }
+  const btn = document.getElementById('csvYukleBtn');
+  const geriBildirim = document.getElementById('csvGeriBildirim');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Dosya Yükleniyor ve İnceleniyor...";
+  }
+  if (geriBildirim) {
+    geriBildirim.style.display = 'block';
+    geriBildirim.textContent = "CSV dosyası sunucuya gönderiliyor...";
+  }
+
   const formData = new FormData();
   formData.append('dosya', fileInput.files[0]);
-  surecBaslat();
+
   try {
     const res = await fetch('/csv-yukle', { method: 'POST', body: formData });
     const data = await res.json();
     if (data.hata) {
-      alert(data.hata);
+      alert("Hata: " + data.hata);
       const bar = document.getElementById('durumBar');
       bar.classList.remove('aktif');
+      if (btn) { btn.disabled = false; btn.textContent = "Storytel CSV Dosyasını İçe Aktar"; }
+      if (geriBildirim) geriBildirim.textContent = "Hata: " + data.hata;
       if (kontrolTimer) { clearInterval(kontrolTimer); kontrolTimer = null; }
+    } else {
+      if (geriBildirim) geriBildirim.textContent = "İşlem başladı: Yeni kitaplar taranıyor...";
+      surecBaslat();
     }
   } catch (err) {
     alert("Yükleme isteği gönderilemedi: " + err);
     const bar = document.getElementById('durumBar');
     bar.classList.remove('aktif');
+    if (btn) { btn.disabled = false; btn.textContent = "Storytel CSV Dosyasını İçe Aktar"; }
+    if (geriBildirim) geriBildirim.textContent = "Bağlantı hatası: " + err;
     if (kontrolTimer) { clearInterval(kontrolTimer); kontrolTimer = null; }
   }
 };
@@ -851,14 +903,21 @@ document.getElementById('tekKitapForm').onsubmit = async (e) => {
     yazar: document.getElementById('tkYazar').value,
     sure_saat: document.getElementById('tkSure').value
   };
-  surecBaslat();
-  const res = await fetch('/tek-kitap-ekle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
+  try {
+    const res = await fetch('/tek-kitap-ekle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.hata) {
+      alert("Hata: " + data.hata);
+    } else {
+      surecBaslat();
+    }
+  } catch (err) {
+    alert("İstek gönderilemedi: " + err);
+  }
 };
 
 // Word (.docx) yüklenince satırları metin kutusuna aktar
@@ -883,14 +942,21 @@ async function psikolojiListesiEkle() {
     alert("Lütfen eklenecek kitap listesini girin veya bir .docx dosyası seçin.");
     return;
   }
-  surecBaslat();
-  const res = await fetch('/psikoloji-ekle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ metin, dil })
-  });
-  const data = await res.json();
-  if (data.hata) alert(data.hata);
+  try {
+    const res = await fetch('/psikoloji-ekle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metin, dil })
+    });
+    const data = await res.json();
+    if (data.hata) {
+      alert("Hata: " + data.hata);
+    } else {
+      surecBaslat();
+    }
+  } catch (err) {
+    alert("İstek gönderilemedi: " + err);
+  }
 }
 
 async function githubdanCek() {

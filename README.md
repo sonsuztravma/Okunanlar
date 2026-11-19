@@ -6,6 +6,21 @@ Canlı Demo: [https://sonsuztravma.github.io/Okunanlar/](https://sonsuztravma.gi
 
 ---
 
+## 📥 Anna's Archive Türkçe Kitap İndirici (Alt Uygulama)
+
+Anna's Archive API tabanlı, toplu arama, format filtreleme ve doğrudan klasöre otomatik indirme uygulaması:
+
+1. Klasördeki **`Anna_Kitap_Indirici.bat`** dosyasına çift tıklayın.
+2. Web arayüzü otomatik olarak açılacaktır: (`http://localhost:3000`)
+3. **Özellikler:**
+   - **Toplu Kitap Arama & İndirme:** Kitap adlarını satır satır yapıştırın veya `.txt`/`.csv` listesi yükleyin.
+   - **Klasör Seçimi:** Kitapların indirileceği klasörü Windows Klasör Seçici ile seçebilir veya doğrudan yol belirtebilirsiniz (Varsayılan: `D:\AI_Projelerim\Okunanlar\kitaplar`).
+   - **Çoklu Format Desteği:** Her kitap için **EPUB, PDF, MOBI, AZW3, CBR/CBZ, FB2, DJVU** formatlarını seçebilir; "İlk Uygun Formatı İndir" veya "Seçilen Tüm Formatları İndir" stratejilerini kullanabilirsiniz.
+   - **Canlı İlerleme Takibi:** Anlık indirme hızları, yüzdeleri ve işlem günlükleri (Server-Sent Events ile canlı akış).
+   - **Tekli Arama:** Kapak görselleri ve detaylı meta verilerle tekil arama ve tek tıkla klasöre indirme.
+
+---
+
 ## ⚡ Kolay Kitap Ekleme & Güncelleme (Yönetim Paneli)
 
 Karmaşık komutlar çalıştırmadan, tek tıkla arayüz üzerinden kitap eklemek için:
