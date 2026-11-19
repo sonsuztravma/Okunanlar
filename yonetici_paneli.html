@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sonsuz Okumalar - Merkezi Yönetici Paneli</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+:root {
+  --bg: #0b0d14;
+  --panel: #131722;
+  --panel-kenar: rgba(255, 255, 255, 0.08);
+  --yazi: #e6edf3;
+  --soluk: #8b949e;
+  --vurgu-sari: #f59e0b;
+  --vurgu-mavi: #38bdf8;
+  --vurgu-mor: #a855f7;
+  --vurgu-yesil: #10b981;
+  --vurgu-kirmizi: #ef4444;
+  --kart-hover: #1a2030;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg);
+  color: var(--yazi);
+  min-height: 100vh;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ŞİFRE KİLİT EKRANI */
+#sifreEkrani {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at center, #171d2c 0%, #08090f 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+.kilit-kutusu {
+  background: var(--panel);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 16px;
+  padding: 36px 32px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.7);
+  animation: fadeIn 0.3s ease-out;
+}
+.kilit-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  border: 2px solid var(--vurgu-sari);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+}
+.kilit-baslik {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.kilit-aciklama {
+  font-size: 0.88rem;
+  color: var(--soluk);
+  margin-bottom: 24px;
+}
+.sifre-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sifre-girdi-kapsul {
+  position: relative;
+}
+.sifre-girdi {
+  width: 100%;
+  padding: 12px 16px;
+  background: #080a10;
+  border: 1px solid var(--panel-kenar);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 1rem;
+  text-align: center;
+  letter-spacing: 2px;
+  transition: all 0.2s;
+}
+.sifre-girdi:focus {
+  outline: none;
+  border-color: var(--vurgu-sari);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+}
+.btn-giris {
+  padding: 12px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  border-radius: 10px;
+  color: #0b0d14;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-giris:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.hata-mesaji {
+  color: var(--vurgu-kirmizi);
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: none;
+  margin-top: 4px;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+.salla { animation: shake 0.4s ease-in-out; }
+
+/* YÖNETİM PANELİ ANA İÇERİK */
+#anaYonetim {
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-kenar);
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.ust-sol {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ust-sol img {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.ust-sol h1 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+}
+.ust-sol span {
+  font-size: 0.8rem;
+  color: var(--vurgu-sari);
+  display: block;
+}
+
+.ust-sag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-kilit {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--vurgu-kirmizi);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-kilit:hover {
+  background: var(--vurgu-kirmizi);
+  color: #fff;
+}
+.btn-link {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-kenar);
+  color: var(--yazi);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+.btn-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ana-kapsayici {
+  max-width: 1280px;
+  margin: 30px auto;
+  padding: 0 24px;
+  width: 100%;
+}
+
+.giris-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(56, 189, 248, 0.05) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.giris-banner h2 {
+  font-size: 1.15rem;
+  color: var(--vurgu-sari);
+  margin-bottom: 4px;
+}
+.giris-banner p {
+  font-size: 0.88rem;
+  color: var(--soluk);
+}
+
+/* UYGULAMA KARTLARI */
+.kartlar-izgara {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 20px;
+}
+.uygulama-karti {
+  background: var(--panel);
+  border: 1px solid var(--panel-kenar);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.uygulama-karti::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--vurgu-renk, var(--vurgu-sari));
+  opacity: 0.8;
+}
+.uygulama-karti:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  background: var(--kart-hover);
+}
+
+.kart-ust {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+.kart-baslik-alani {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.kart-ikon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.kart-baslik {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+.kart-port {
+  font-size: 0.72rem;
+  color: var(--soluk);
+  font-family: monospace;
+}
+
+.durum-rozet {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.durum-aktif {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--vurgu-yesil);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.durum-beklemede {
+  background: rgba(139, 148, 158, 0.15);
+  color: var(--soluk);
+  border: 1px solid rgba(139, 148, 158, 0.25);
+}
+
+.kart-aciklama {
+  font-size: 0.85rem;
+  color: #b1bac4;
+  line-height: 1.55;
+  margin-bottom: 18px;
+  flex: 1;
+}
+
+.kart-alt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.buton-grubu {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn-kart {
+  flex: 1;
+  min-width: 120px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+}
+.btn-kart-primer {
+  background: var(--vurgu-renk, var(--vurgu-sari));
+  color: #0b0d14;
+}
+.btn-kart-primer:hover {
+  filter: brightness(1.15);
+}
+.btn-kart-ikincil {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--yazi);
+  border: 1px solid var(--panel-kenar);
+}
+.btn-kart-ikincil:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.bat-ipucu {
+  font-size: 0.73rem;
+  color: var(--soluk);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bat-ipucu code {
+  background: rgba(0,0,0,0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--vurgu-sari);
+  font-family: monospace;
+}
+
+footer {
+  margin-top: auto;
+  text-align: center;
+  padding: 24px;
+  font-size: 0.8rem;
+  color: var(--soluk);
+  border-top: 1px solid var(--panel-kenar);
+}
+</style>
+</head>
+<body>
+
+<!-- 1. ŞİFRE GİRİŞ EKRANI -->
+<div id="sifreEkrani">
+  <div class="kilit-kutusu" id="kilitKutusu">
+    <img src="logo.png" alt="Sonsuz Okumalar Logo" class="kilit-logo" onerror="this.style.display='none'">
+    <h2 class="kilit-baslik">Yönetici Paneli Girişi</h2>
+    <p class="kilit-aciklama">Bu alana erişmek için yönetici şifresini girin.</p>
+    
+    <form class="sifre-form" onsubmit="sifreKontrol(event)">
+      <div class="sifre-girdi-kapsul">
+        <input type="password" id="sifreGirdisi" class="sifre-girdi" placeholder="••••••••••••" autofocus autocomplete="current-password">
+      </div>
+      <div id="hataMesaji" class="hata-mesaji">⚠️ Hatalı şifre! Erişim engellendi.</div>
+      <button type="submit" class="btn-giris">🔓 Giriş Yap</button>
+    </form>
+  </div>
+</div>
+
+<!-- 2. ANA YÖNETİM MERKEZİ (ŞİFRE DOĞRULANINCA GÖRÜNÜR) -->
+<div id="anaYonetim">
+  <header>
+    <div class="ust-sol">
+      <img src="logo.png" alt="Logo" onerror="this.style.display='none'">
+      <div>
+        <h1>Sonsuz Okumalar - Yönetim Merkezi</h1>
+        <span>Tüm Alt Uygulamalar ve Servisler Havuzu</span>
+      </div>
+    </div>
+    <div class="ust-sag">
+      <a href="index.html" class="btn-link">📚 Kütüphaneyi Aç</a>
+      <button class="btn-kilit" onclick="oturumuKapat()">🔒 Paneli Kilitle</button>
+    </div>
+  </header>
+
+  <main class="ana-kapsayici">
+    <div class="giris-banner">
+      <div>
+        <h2>Hoş Geldiniz, Yönetici</h2>
+        <p>Aşağıda Sonsuz Okumalar projesi kapsamında çalışan ve entegre edilen tüm yardımcı uygulamaları, servis durumlarını ve çalıştırma araçlarını görebilirsiniz.</p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-link" onclick="tumServisleriBaslat(this)" style="background:linear-gradient(135deg,#10b981,#059669);border:none;color:#fff;font-weight:700;padding:8px 16px;cursor:pointer;">
+          🚀 Tüm Servisleri Başlat
+        </button>
+        <button class="btn-link" onclick="servisleriKontrolEt()" style="background:rgba(245,158,11,0.15);border-color:var(--vurgu-sari);color:var(--vurgu-sari);padding:8px 16px;cursor:pointer;">
+          🔄 Durumları Yenile
+        </button>
+      </div>
+    </div>
+
+    <div class="kartlar-izgara">
+
+      <!-- 1. KİTAP DÜZENLEYİCİ & FORMAT YÖNETİCİSİ -->
+      <div class="uygulama-karti" style="--vurgu-renk: #38bdf8;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">📂</span>
+              <div>
+                <div class="kart-baslik">Kitap Düzenleyici &amp; Formatçı</div>
+                <div class="kart-port">Port: 5050 (Dinamik)</div>
+              </div>
+            </div>
+            <span id="durum_duzenleyici" class="durum-rozet durum-beklemede">Kontrol ediliyor...</span>
+          </div>
+          <p class="kart-aciklama">
+            Google Drive, Telegram ve Anna's Archive gibi kaynaklardan çekilen kitap dosyalarını kütüphane veritabanı ile eşleştirerek <strong>Kitap Adı - Yazar</strong> formatında standartlaştırır. Mükerrer dosyaları temizler, PDF/EPUB olarak gruplar ve Calibre ile karşılıklı dönüştürme yapar.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <button id="btn_duzenleyici" onclick="servisiBaslatVeAc('duzenleyici', 'http://127.0.0.1:5050', this)" class="btn-kart btn-kart-primer">⚡ Başlat ve Aç (5050)</button>
+          </div>
+          <div class="bat-ipucu">
+            Çalıştırma: <code>Kitap_Duzenleyici.bat</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. ANNA'S ARCHIVE TÜRKÇE KİTAP İNDİRİCİ -->
+      <div class="uygulama-karti" style="--vurgu-renk: #818cf8;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">📥</span>
+              <div>
+                <div class="kart-baslik">Anna's Archive Kitap İndirici</div>
+                <div class="kart-port">Port: 3000 (Node.js)</div>
+              </div>
+            </div>
+            <span id="durum_annas" class="durum-rozet durum-beklemede">Kontrol ediliyor...</span>
+          </div>
+          <p class="kart-aciklama">
+            Kütüphanenizdeki eksik veya okumak istediğiniz Türkçe kitapları Anna's Archive üzerinde otomatik arar, yüksek hızlı doğrudan indirme linkleri sunar ve indirilen kitapları yerel kütüphanenize kazandırır.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <button id="btn_annas" onclick="servisiBaslatVeAc('annas', 'http://localhost:3000', this)" class="btn-kart btn-kart-primer" style="background:#818cf8;color:#fff;">⚡ Başlat ve Aç (3000)</button>
+          </div>
+          <div class="bat-ipucu">
+            Çalıştırma: <code>Anna_Kitap_Indirici.bat</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. GOOGLE DRIVE KİTAP SENKRONİZASYONU -->
+      <div class="uygulama-karti" style="--vurgu-renk: #10b981;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">☁️</span>
+              <div>
+                <div class="kart-baslik">Google Drive Senkronizasyonu</div>
+                <div class="kart-port">Port: 5005 (Flask Web)</div>
+              </div>
+            </div>
+            <span id="durum_drive" class="durum-rozet durum-beklemede">Kontrol ediliyor...</span>
+          </div>
+          <p class="kart-aciklama">
+            Google Drive üzerindeki devasa kitap koleksiyonunu indeksler (<code>drive_index.json</code>), yerel kütüphanenizle karşılaştırır, eksik kitapları belirler ve istediğiniz kitapları tek tıkla yerel bilgisayarınıza kopyalar.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <button id="btn_drive" onclick="servisiBaslatVeAc('drive', 'http://127.0.0.1:5005', this)" class="btn-kart btn-kart-primer" style="background:#10b981;color:#fff;">⚡ Başlat ve Aç (5005)</button>
+          </div>
+          <div class="bat-ipucu">
+            Çalıştırma: <code>Drive_Kitap_Senkronizator.bat</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. KİTAP YÖNETİM PANELİ (STORYTEL & CSV & İSBN) -->
+      <div class="uygulama-karti" style="--vurgu-renk: #f59e0b;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">⚡</span>
+              <div>
+                <div class="kart-baslik">Kitap Yönetim Paneli</div>
+                <div class="kart-port">Port: 5000 (Flask)</div>
+              </div>
+            </div>
+            <span id="durum_yonetici" class="durum-rozet durum-beklemede">Kontrol ediliyor...</span>
+          </div>
+          <p class="kart-aciklama">
+            Storytel dinleme geçmişi CSV dosyalarını kütüphane havuzuna ekler, tek tek ISBN veya kitap adı girerek internetten kapak ve tanıtım metinlerini toplar ve canlı GitHub kütüphanesini günceller.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <button id="btn_yonetici" onclick="servisiBaslatVeAc('yonetici', 'http://127.0.0.1:5000', this)" class="btn-kart btn-kart-primer">Yöneticiyi Aç (5000)</button>
+          </div>
+          <div class="bat-ipucu">
+            Çalıştırma: <code>Kitap_Ekle_Yonetici.bat</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. ONLİNE MOBİL KİTAP EKLEME -->
+      <div class="uygulama-karti" style="--vurgu-renk: #a855f7;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">📱</span>
+              <div>
+                <div class="kart-baslik">Online &amp; Mobil Kitap Ekle</div>
+                <div class="kart-port">Statik Web &amp; GitHub API</div>
+              </div>
+            </div>
+            <span class="durum-rozet durum-aktif">Her Zaman Aktif</span>
+          </div>
+          <p class="kart-aciklama">
+            Bilgisayar başında olmadan cep telefonunuzdan, tabletinizden veya herhangi bir cihazdan GitHub Token yetkisi ile doğrudan kitap ekleyip canlı kütüphanenizi güncellemenizi sağlar.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <a href="ekle.html" target="_blank" class="btn-kart btn-kart-primer" style="background:#a855f7;color:#fff;">Ekleme Panelini Aç</a>
+          </div>
+          <div class="bat-ipucu">
+            Konum: <code>ekle.html</code> (Sunucu gerektirmez)
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. SONSUZ OKUMALAR ANA KÜTÜPHANESİ -->
+      <div class="uygulama-karti" style="--vurgu-renk: #3b82f6;">
+        <div>
+          <div class="kart-ust">
+            <div class="kart-baslik-alani">
+              <span class="kart-ikon">📚</span>
+              <div>
+                <div class="kart-baslik">Ana Vitrin Kütüphanesi</div>
+                <div class="kart-port">İstemci Taraflı SPA</div>
+              </div>
+            </div>
+            <span class="durum-rozet durum-aktif">Her Zaman Aktif</span>
+          </div>
+          <p class="kart-aciklama">
+            800+'den fazla sesli ve akademik kitabınızın kapakları, özetleri, dinleme istatistikleri, APA 7 akademik kaynakça kopyalama ve gelişmiş filtreleme özelliklerini barındıran ana vitrin.
+          </p>
+        </div>
+        <div class="kart-alt">
+          <div class="buton-grubu">
+            <a href="index.html" class="btn-kart btn-kart-primer" style="background:#3b82f6;color:#fff;">Kütüphaneyi Aç</a>
+          </div>
+          <div class="bat-ipucu">
+            Konum: <code>index.html</code> (Veya <code>Kutuphaneyi_Baslat.bat</code>)
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    Sonsuz Okumalar - Tüm Hakları Saklıdır &copy; 2026
+  </footer>
+</div>
+
+<script>
+const DOGRU_SIFRE = "sonsuzkitaplar";
+const AUTH_KEY = "okunanlar_yonetici_oturum";
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Oturum kontrolü
+  if (sessionStorage.getItem(AUTH_KEY) === "aktif") {
+    paneliGoster();
+  } else {
+    document.getElementById('sifreEkrani').style.display = 'flex';
+    document.getElementById('anaYonetim').style.display = 'none';
+  }
+});
+
+function sifreKontrol(e) {
+  e.preventDefault();
+  const girilen = document.getElementById('sifreGirdisi').value.trim();
+  const hata = document.getElementById('hataMesaji');
+  const kutu = document.getElementById('kilitKutusu');
+
+  if (girilen === DOGRU_SIFRE) {
+    sessionStorage.setItem(AUTH_KEY, "aktif");
+    hata.style.display = 'none';
+    paneliGoster();
+  } else {
+    hata.style.display = 'block';
+    kutu.classList.add('salla');
+    setTimeout(() => kutu.classList.remove('salla'), 450);
+    document.getElementById('sifreGirdisi').value = '';
+    document.getElementById('sifreGirdisi').focus();
+  }
+}
+
+function paneliGoster() {
+  document.getElementById('sifreEkrani').style.display = 'none';
+  document.getElementById('anaYonetim').style.display = 'flex';
+  servisleriKontrolEt();
+}
+
+function oturumuKapat() {
+  sessionStorage.removeItem(AUTH_KEY);
+  location.reload();
+}
+
+const API_URL = (location.port === '5000') ? '' : 'http://127.0.0.1:5000';
+
+async function pingServis(url) {
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 1200);
+    await fetch(url, { mode: 'no-cors', signal: controller.signal });
+    clearTimeout(id);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function servisleriKontrolEt() {
+  const servisler = [
+    { id: 'duzenleyici', port: 5050, url: 'http://127.0.0.1:5050' },
+    { id: 'annas', port: 3000, url: 'http://localhost:3000' },
+    { id: 'drive', port: 5005, url: 'http://127.0.0.1:5005' },
+    { id: 'yonetici', port: 5000, url: 'http://127.0.0.1:5000' }
+  ];
+
+  let apiDurum = null;
+  try {
+    const r = await fetch(API_URL + '/api/servisler/durum');
+    if (r.ok) apiDurum = await r.json();
+  } catch (e) {}
+
+  for (const s of servisler) {
+    const el = document.getElementById('durum_' + s.id);
+    const btn = document.getElementById('btn_' + s.id);
+    if (!el) continue;
+
+    let aktif = false;
+    if (apiDurum && apiDurum[s.id]) {
+      aktif = apiDurum[s.id].aktif;
+    } else {
+      aktif = await pingServis(s.url);
+    }
+
+    if (aktif) {
+      el.className = 'durum-rozet durum-aktif';
+      el.textContent = '🟢 Aktif';
+      if (btn) {
+        btn.textContent = `Uygulamayı Aç (${s.port})`;
+        btn.style.filter = 'none';
+      }
+    } else {
+      el.className = 'durum-rozet durum-beklemede';
+      el.textContent = '⚪ Beklemede';
+      if (btn) {
+        btn.textContent = `⚡ Başlat ve Aç (${s.port})`;
+      }
+    }
+  }
+}
+
+async function servisiBaslatVeAc(servisId, url, btn) {
+  const rozet = document.getElementById('durum_' + servisId);
+  const isAktif = rozet && rozet.classList.contains('durum-aktif');
+
+  if (isAktif) {
+    window.open(url, '_blank');
+    return;
+  }
+
+  const eskiMetin = btn ? btn.textContent : '';
+  if (btn) {
+    btn.textContent = '⏳ Başlatılıyor...';
+    btn.disabled = true;
+  }
+
+  try {
+    const res = await fetch(API_URL + '/api/servisler/baslat/' + servisId, { method: 'POST' });
+    const data = await res.json();
+    if (data.hata) {
+      alert("Hata: " + data.hata);
+    } else {
+      await new Promise(r => setTimeout(r, 1200));
+      await servisleriKontrolEt();
+      window.open(url, '_blank');
+    }
+  } catch (err) {
+    alert("Yönetici arka plan servisine ulaşılamadı. Lütfen Kitap_Ekle_Yonetici.bat veya ilgili .bat dosyasını doğrudan çalıştırın.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = eskiMetin;
+    }
+    servisleriKontrolEt();
+  }
+}
+
+async function tumServisleriBaslat(btn) {
+  const eskiMetin = btn ? btn.textContent : '';
+  if (btn) {
+    btn.textContent = '⏳ Başlatılıyor...';
+    btn.disabled = true;
+  }
+  try {
+    const res = await fetch(API_URL + '/api/servisler/baslat/hepsi', { method: 'POST' });
+    const data = await res.json();
+    alert(data.mesaj || "Tüm servisler başlatıldı!");
+    await new Promise(r => setTimeout(r, 1500));
+    await servisleriKontrolEt();
+  } catch (err) {
+    alert("Yönetici servisine ulaşılamadı. Lütfen Kitap_Ekle_Yonetici.bat dosyasını çalıştırın.");
+  } finally {
+    if (btn) {
+      btn.textContent = eskiMetin;
+      btn.disabled = false;
+    }
+  }
+}
+</script>
+</body>
+</html>

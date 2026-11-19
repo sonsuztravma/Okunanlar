@@ -41,3 +41,4 @@ drive_senkronizator_web.py
 telegram_kitap_indirici.py
 
 yuklenen_*.csv
+*_port.txt

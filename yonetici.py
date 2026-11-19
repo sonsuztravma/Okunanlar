@@ -240,6 +240,10 @@ def index_html_dosya():
 def ekle_html_dosya():
     return send_from_directory(KOK_DIZIN, 'ekle.html')
 
+@app.route('/yonetici_paneli.html')
+def yonetici_paneli_html_dosya():
+    return send_from_directory(KOK_DIZIN, 'yonetici_paneli.html')
+
 @app.route('/stil.css')
 def stil_css_dosya():
     return send_from_directory(KOK_DIZIN, 'stil.css')
@@ -255,6 +259,86 @@ def veri_js_dosya():
 @app.route('/kapaklar/<path:dosya_adi>')
 def kapaklar_dosya(dosya_adi):
     return send_from_directory(os.path.join(KOK_DIZIN, 'kapaklar'), dosya_adi)
+
+@app.after_request
+def cors_ekle(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+def port_kontrol(port, host='127.0.0.1'):
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
+
+@app.route('/api/servisler/durum', methods=['GET'])
+def servisler_durum():
+    durumlar = {
+        'duzenleyici': {'port': 5050, 'aktif': port_kontrol(5050), 'url': 'http://127.0.0.1:5050'},
+        'annas': {'port': 3000, 'aktif': port_kontrol(3000), 'url': 'http://localhost:3000'},
+        'drive': {'port': 5005, 'aktif': port_kontrol(5005), 'url': 'http://127.0.0.1:5005'},
+        'yonetici': {'port': 5000, 'aktif': True, 'url': 'http://127.0.0.1:5000'}
+    }
+    return jsonify(durumlar)
+
+@app.route('/api/servisler/baslat/<servis_id>', methods=['POST'])
+def servis_baslat(servis_id):
+    servisler = {
+        'duzenleyici': {
+            'port': 5050,
+            'ad': 'Kitap Düzenleyici',
+            'cmd': [sys.executable, 'kitap_duzenleyici.py'],
+            'cwd': KOK_DIZIN,
+            'url': 'http://127.0.0.1:5050'
+        },
+        'annas': {
+            'port': 3000,
+            'ad': "Anna's Archive Kitap İndirici",
+            'cmd': ['node', 'server.js'],
+            'cwd': os.path.join(KOK_DIZIN, 'annas_indirici'),
+            'url': 'http://localhost:3000'
+        },
+        'drive': {
+            'port': 5005,
+            'ad': 'Google Drive Senkronizasyonu',
+            'cmd': [sys.executable, 'drive_senkronizator_web.py'],
+            'cwd': KOK_DIZIN,
+            'url': 'http://127.0.0.1:5005'
+        }
+    }
+    
+    if servis_id == 'hepsi':
+        baslatilanlar = []
+        for sid, sinfo in servisler.items():
+            if not port_kontrol(sinfo['port']):
+                try:
+                    subprocess.Popen(sinfo['cmd'], cwd=sinfo['cwd'], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    baslatilanlar.append(sinfo['ad'])
+                except Exception as e:
+                    pass
+        return jsonify({"basarili": True, "mesaj": f"Tüm servisler başlatıldı: {', '.join(baslatilanlar) if baslatilanlar else 'Hepsi zaten çalışıyor.'}"})
+
+    if servis_id not in servisler:
+        return jsonify({"hata": f"Bilinmeyen servis: {servis_id}"}), 400
+
+    sinfo = servisler[servis_id]
+    if port_kontrol(sinfo['port']):
+        return jsonify({"basarili": True, "mesaj": f"{sinfo['ad']} zaten çalışıyor.", "url": sinfo['url']})
+
+    try:
+        subprocess.Popen(sinfo['cmd'], cwd=sinfo['cwd'], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        for _ in range(10):
+            time.sleep(0.3)
+            if port_kontrol(sinfo['port']):
+                break
+        return jsonify({"basarili": True, "mesaj": f"{sinfo['ad']} başarıyla başlatıldı!", "url": sinfo['url']})
+    except Exception as e:
+        return jsonify({"hata": f"Servis başlatılamadı: {e}"}), 500
 
 @app.route('/')
 def index():
@@ -518,7 +602,8 @@ HTML_TEMPLATE = """
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <a href="http://localhost:5050" target="_blank" style="padding:6px 14px;background:rgba(56,189,248,0.2);border:1px solid #38bdf8;color:#7dd3fc;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Google Drive, Telegram ve Anna's Archive Kitap Düzenleyici">📂 Kitap Düzenleyici</a>
+      <a href="/yonetici_paneli.html" target="_blank" style="padding:6px 14px;background:rgba(245,158,11,0.2);border:1px solid #f59e0b;color:#fcd34d;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Merkezi Yönetici Paneli (Şifreli)">🔒 Yönetici Paneli</a>
+      <a href="http://127.0.0.1:5050" target="_blank" style="padding:6px 14px;background:rgba(56,189,248,0.2);border:1px solid #38bdf8;color:#7dd3fc;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Google Drive, Telegram ve Anna's Archive Kitap Düzenleyici">📂 Kitap Düzenleyici</a>
       <a href="http://localhost:3000" target="_blank" style="padding:6px 14px;background:rgba(99,102,241,0.2);border:1px solid #6366f1;color:#a5b4fc;text-decoration:none;border-radius:999px;font-size:0.8rem;font-weight:700;" title="Anna's Archive Kitap İndirici">📥 Kitap İndirici</a>
       <div class="sayac-kutu">Arşivde: <strong id="toplamKitap">{{ toplam_kitap }}</strong> kitap</div>
     </div>

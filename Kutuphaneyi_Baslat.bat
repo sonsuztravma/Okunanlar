@@ -23,4 +23,10 @@ if %ERRORLEVEL% EQU 0 (
 echo.
 echo [2/2] Kutuphane varsayilan tarayicinizda aciliyor...
 start "" "%~dp0index.html"
-exit
+
+echo.
+echo ========================================================
+echo [OK] Kutuphane basariyla acildi!
+echo Bu pencereyi kapatabilirsiniz veya cikmak icin bir tusa basin.
+echo ========================================================
+pause
