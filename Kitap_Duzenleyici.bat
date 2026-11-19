@@ -8,16 +8,8 @@ echo.
 
 cd /d "%~dp0"
 
-echo [*] Calibre ve Python ortami kontrol ediliyor...
-where "C:\Program Files\Calibre2\ebook-convert.exe" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo [OK] Calibre donusturucu algilandi.
-) else (
-    echo [i] Calibre varsayilan dizinde bulunamadi (Donusturme haric diger tum ozellikler calisir).
-)
-
-echo.
-echo [*] Web Sunucusu baslatiliyor (Tarayici otomatik acilacaktir)...
+echo [*] Web Sunucusu baslatiliyor: http://127.0.0.1:5050
+echo (Tarayiciniz otomatik acilacaktir...)
 echo.
 python kitap_duzenleyici.py
 if %ERRORLEVEL% NEQ 0 (

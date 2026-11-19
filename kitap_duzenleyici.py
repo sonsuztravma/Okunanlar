@@ -32,17 +32,19 @@ DB_YOLU = os.path.join(ARSIV_DIZIN, 'veri', 'kitaplik.db')
 ONBELLEK_DOSYASI = os.path.join(KOK_DIZIN, '.duzenleyici_onbellek.json')
 GECMIS_DOSYASI = os.path.join(KOK_DIZIN, '.duzenleyici_gecmis.json')
 
-# Calibre ebook-convert yolu tespiti
+# Calibre ebook-convert yolu tespiti (İhtiyaç duyulduğunda dinamik sorgulanır)
 CALIBRE_YOLU = None
-olasi_calibre_yollari = [
-    r"C:\Program Files\Calibre2\ebook-convert.exe",
-    r"C:\Program Files (x86)\Calibre2\ebook-convert.exe",
-    shutil.which("ebook-convert"),
-]
-for cy in olasi_calibre_yollari:
-    if cy and os.path.exists(cy):
-        CALIBRE_YOLU = cy
-        break
+
+def calibre_yolu_bul():
+    olasi_calibre_yollari = [
+        r"C:\Program Files\Calibre2\ebook-convert.exe",
+        r"C:\Program Files (x86)\Calibre2\ebook-convert.exe",
+        shutil.which("ebook-convert"),
+    ]
+    for cy in olasi_calibre_yollari:
+        if cy and os.path.exists(cy):
+            return cy
+    return None
 
 # Desteklenen uzantılar
 DESTEKLENEN_UZANTILAR = {'.pdf', '.epub', '.mobi', '.azw3', '.txt', '.docx', '.fb2', '.cbr', '.cbz'}
@@ -131,6 +133,9 @@ class KutuphaneReferans:
         self.baslik_haritasi = {} # norm(baslik) -> (baslik, yazar)
         self.yazar_kumesi = set() # set of norm(yazar)
         self.yazar_orijinal = {}  # norm(yazar) -> orijinal_yazar
+        self.kelime_haritasi = {} # kelime -> [(baslik, yazar, norm_baslik)]
+        self.onbellek_ara = {}
+        self.onbellek_yazar = {}
         self.yukle()
 
     def yukle(self):
@@ -138,6 +143,9 @@ class KutuphaneReferans:
         self.baslik_haritasi.clear()
         self.yazar_kumesi.clear()
         self.yazar_orijinal.clear()
+        self.kelime_haritasi.clear()
+        self.onbellek_ara.clear()
+        self.onbellek_yazar.clear()
 
         # 1. SQLite kitaplik.db'den yükle
         if os.path.exists(DB_YOLU):
@@ -195,6 +203,9 @@ class KutuphaneReferans:
         if nb not in self.baslik_haritasi or (not self.baslik_haritasi[nb][1] and yazar):
             self.baslik_haritasi[nb] = (baslik, yazar)
             self.kitaplar.append((baslik, yazar))
+            for w in nb.split():
+                if len(w) >= 3:
+                    self.kelime_haritasi.setdefault(w, []).append((baslik, yazar, nb))
         
         if yazar:
             ny = norm(yazar)
@@ -203,60 +214,79 @@ class KutuphaneReferans:
 
     def ara(self, sorgu_metin):
         """
-        Sorgu metnini referans kütüphanede arar.
-        Tam eşleşme, alt küme eşleşmesi veya bulanık (fuzzy) eşleşme döndürür.
+        Sorgu metnini referans kütüphanede ultra hızlı arar.
+        Tam eşleşme, alt küme eşleşmesi ve indeksli benzerlik döndürür.
         """
         q_norm = norm(sorgu_metin)
         if not q_norm:
             return None, None, None, 0
 
+        if q_norm in self.onbellek_ara:
+            return self.onbellek_ara[q_norm]
+
         # 1. Tam normalize eşleşme
         if q_norm in self.baslik_haritasi:
             b, y = self.baslik_haritasi[q_norm]
-            return b, y, "Veritabanı (Tam Eşleşme)", 1.0
+            res = (b, y, "Veritabanı (Tam Eşleşme)", 1.0)
+            self.onbellek_ara[q_norm] = res
+            return res
 
-        # 2. Kelime grubu / içerik eşleşmesi
-        for b, y in self.kitaplar:
-            nb = norm(b)
-            if nb and (nb == q_norm or (len(nb) >= 4 and nb in q_norm) or (len(q_norm) >= 4 and q_norm in nb)):
-                return b, y, "Veritabanı (İçerik Eşleşmesi)", 0.90
-
-        # 3. Yazar ve Kitap Adı ayrıştırma testi:
-        # Örnek: "tutunamayanlar oguz atay" veya "oguz atay tutunamayanlar"
+        # 2. Yazar ve Kitap Adı ayrıştırma testi:
         for ny, oy in self.yazar_orijinal.items():
             if len(ny) >= 4 and ny in q_norm:
                 kalan = q_norm.replace(ny, '').strip()
                 if kalan in self.baslik_haritasi:
                     b, y = self.baslik_haritasi[kalan]
-                    return b, y or oy, "Veritabanı (Yazar + Başlık)", 0.95
-                for b, y in self.kitaplar:
-                    nb = norm(b)
-                    if nb and (nb == kalan or (len(nb) >= 4 and (nb in kalan or kalan in nb))):
-                        return b, y or oy, "Veritabanı (Yazar + Başlık)", 0.90
+                    res = (b, y or oy, "Veritabanı (Yazar + Başlık)", 0.95)
+                    self.onbellek_ara[q_norm] = res
+                    return res
 
-        # 4. Bulanık (Fuzzy SequenceMatcher) Eşleşme
-        en_iyi_oran = 0
-        en_iyi_kitap = None
-        for b, y in self.kitaplar:
-            nb = norm(b)
-            r = difflib.SequenceMatcher(None, q_norm, nb).ratio()
-            if r > en_iyi_oran:
-                en_iyi_oran = r
-                en_iyi_kitap = (b, y)
+        # 3. Kelime indeksinden aday seçimi (SequenceMatcher sadece kelime paylaşanlara uygulanır)
+        q_words = [w for w in q_norm.split() if len(w) >= 3]
+        aday_kitaplar = {}
+        for w in q_words:
+            if w in self.kelime_haritasi:
+                for b, y, nb in self.kelime_haritasi[w]:
+                    aday_kitaplar[nb] = (b, y)
 
-        if en_iyi_oran >= 0.78:
-            return en_iyi_kitap[0], en_iyi_kitap[1], f"Veritabanı (Benzerlik %{int(en_iyi_oran*100)})", en_iyi_oran
+        if aday_kitaplar:
+            en_iyi_oran = 0
+            en_iyi_kitap = None
+            for nb, (b, y) in aday_kitaplar.items():
+                if nb == q_norm or (len(nb) >= 4 and nb in q_norm) or (len(q_norm) >= 4 and q_norm in nb):
+                    res = (b, y, "Veritabanı (İçerik Eşleşmesi)", 0.90)
+                    self.onbellek_ara[q_norm] = res
+                    return res
+                r = difflib.SequenceMatcher(None, q_norm, nb).ratio()
+                if r > en_iyi_oran:
+                    en_iyi_oran = r
+                    en_iyi_kitap = (b, y)
 
-        return None, None, None, 0
+            if en_iyi_oran >= 0.78 and en_iyi_kitap:
+                res = (en_iyi_kitap[0], en_iyi_kitap[1], f"Veritabanı (Benzerlik %{int(en_iyi_oran*100)})", en_iyi_oran)
+                self.onbellek_ara[q_norm] = res
+                return res
+
+        res = (None, None, None, 0)
+        self.onbellek_ara[q_norm] = res
+        return res
 
     def yazar_mi(self, metin):
         """Verilen metnin kütüphanede kayıtlı bir yazar olup olmadığını kontrol eder."""
         n = norm(metin)
+        if not n:
+            return None
+        if n in self.onbellek_yazar:
+            return self.onbellek_yazar[n]
         if n in self.yazar_kumesi:
-            return self.yazar_orijinal[n]
+            res = self.yazar_orijinal[n]
+            self.onbellek_yazar[n] = res
+            return res
         for ny, oy in self.yazar_orijinal.items():
             if len(ny) >= 4 and (ny == n or ny in n):
+                self.onbellek_yazar[n] = oy
                 return oy
+        self.onbellek_yazar[n] = None
         return None
 
 referans_havuz = KutuphaneReferans()
@@ -486,14 +516,11 @@ def analiz_et(dosya_yolu):
             kaynak = "Dosya Adı"
             guven = 0.50
 
-    # Eğer yazar hala eksikse internetten sorgulamayı dene
-    if nihai_baslik and not nihai_yazar:
-        net_t, net_a = internette_ara(nihai_baslik)
-        if net_t and net_a:
-            nihai_baslik = net_t
-            nihai_yazar = net_a
-            kaynak = "İnternet Arama (OpenLibrary)"
-            guven = 0.85
+    # Eğer yazar hala eksikse ve dosya üstverisinde yazar varsa kullan
+    if nihai_baslik and not nihai_yazar and meta_yazar:
+        nihai_yazar = meta_yazar
+        kaynak = "Dosya Üstverisi (Yazar)"
+        guven = 0.70
 
     # Başlık ve Yazar formatını güzelleştir
     nb_check = norm(nihai_baslik)
@@ -1637,15 +1664,6 @@ tr.secili {
     </div>
   </div>
 
-  <!-- Calibre Uyarısı / Durumu -->
-  <div id="calibreDurumKutusu" style="display:none;background:rgba(88,166,255,0.1);border:1px solid var(--vurgu-mavi);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:0.85rem;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <span style="font-weight:700;">⚙️ Calibre Dönüştürücü:</span> 
-      <span id="calibreDurumYazi">Kontrol ediliyor...</span>
-    </div>
-    <span id="calibreRozet" class="rozet rozet-epub">Calibre Hazır</span>
-  </div>
-
   <!-- İstatistik Kartları -->
   <div class="kartlar-izgara">
     <div class="kart aktif" onclick="sekmeDegistir('hepsi')">
@@ -1731,6 +1749,9 @@ tr.secili {
       <span>🔄 Calibre ile Format Dönüştürme</span>
       <button class="modal-kapat" onclick="modalKapat('donusturmeModal')">✕</button>
     </div>
+    <div id="modalCalibreDurum" style="display:block;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:0.85rem;font-weight:600;background:rgba(88,166,255,0.08);border:1px solid var(--panel-kenar);">
+      ⚙️ Calibre Dönüştürücü kontrol ediliyor...
+    </div>
     <p style="margin-bottom:12px;font-size:0.9rem;color:var(--metin-soluk);">
       Seçilen <strong id="donusturulecekSayi" style="color:var(--metin-baslik);">0</strong> adet dosya dönüştürülecek.
     </p>
@@ -1783,7 +1804,6 @@ let seciliIdler = new Set();
 let mevcutDonusumId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  calibreDurumunuGetir();
   klasorTara();
 });
 
@@ -1856,10 +1876,17 @@ async function klasorDiyaloguAc() {
 }
 
 async function klasorTara() {
-  const klasor = document.getElementById('hedefKlasor').value.trim();
-  const altDizinler = document.getElementById('altDizinler').checked;
+  const inp = document.getElementById('hedefKlasor');
+  const klasor = inp ? inp.value.trim() : '';
+  const altDizinler = document.getElementById('altDizinler') ? document.getElementById('altDizinler').checked : true;
+  const btnTara = document.querySelector('.btn-yesil[onclick*="klasorTara"]');
 
-  bildirimGoster('Kitap dosyaları ve kütüphane veritabanı taranıyor...', 'bilgi');
+  if (btnTara) {
+    btnTara.disabled = true;
+    btnTara.textContent = '⏳ Taranıyor...';
+  }
+  bildirimGoster('Kitap dosyaları taranıyor...', 'bilgi');
+
   try {
     const res = await fetch('/api/tara', {
       method: 'POST',
@@ -1879,6 +1906,11 @@ async function klasorTara() {
     bildirimGoster(`Tarama tamamlandı: ${tumKitaplar.length} dosya incelendi.`, 'basari');
   } catch(e) {
     bildirimGoster('Tarama sırasında hata oluştu: ' + e, 'hata');
+  } finally {
+    if (btnTara) {
+      btnTara.disabled = false;
+      btnTara.textContent = '🔍 Klasörü Tara & Çözümle';
+    }
   }
 }
 
@@ -2154,11 +2186,43 @@ async function secilenleriSil() {
 }
 
 // Modal Yönetimi
-function formatDonusturmeModaliAc() {
+async function formatDonusturmeModaliAc() {
   if (seciliIdler.size === 0) return;
   document.getElementById('donusturulecekSayi').textContent = seciliIdler.size;
   document.getElementById('donusturmeKonsolKutusu').style.display = 'none';
   document.getElementById('donusturmeModal').style.display = 'flex';
+
+  const uyari = document.getElementById('modalCalibreDurum');
+  const btn = document.getElementById('btnDonusturBaslat');
+  if (uyari) {
+    uyari.style.display = 'block';
+    uyari.style.color = 'var(--vurgu-mavi)';
+    uyari.textContent = '⚙️ Calibre Dönüştürücü kontrol ediliyor...';
+  }
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/calibre-durum');
+    const data = await res.json();
+    if (data.calibre_mevcut) {
+      if (uyari) {
+        uyari.style.color = '#10b981';
+        uyari.textContent = '✅ Calibre hazır: ' + data.calibre_yolu;
+      }
+      if (btn) btn.disabled = false;
+    } else {
+      if (uyari) {
+        uyari.style.color = '#ef4444';
+        uyari.textContent = '⚠️ Calibre programı bulunamadı. E-kitap dönüştürme için Calibre kurulu olmalıdır.';
+      }
+      if (btn) btn.disabled = true;
+    }
+  } catch(e) {
+    if (uyari) {
+      uyari.style.color = '#ef4444';
+      uyari.textContent = 'Calibre durumu sorgulanamadı.';
+    }
+  }
 }
 
 function kopyalaTasiModaliAc(eylem) {
@@ -2308,11 +2372,6 @@ if __name__ == '__main__':
     print("  Sonsuz Okumalar - Kitap Düzenleyici & Format Yöneticisi")
     print(f"  Tarayıcınızda açılıyor: {url}")
     print("=" * 60)
-    # Calibre bilgisi
-    if CALIBRE_YOLU:
-        print(f"[*] Calibre bulundu: {CALIBRE_YOLU}")
-    else:
-        print("[!] Calibre bulunamadı. E-kitap dönüştürme için Calibre önerilir.")
     
     try:
         with open(os.path.join(KOK_DIZIN, '.duzenleyici_port.txt'), 'w', encoding='utf8') as pf:
